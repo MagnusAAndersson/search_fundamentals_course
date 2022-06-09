@@ -94,7 +94,10 @@ def query():
     print("query obj: {}".format(query_obj))
 
     #### Step 4.b.ii
-    response = None   # TODO: Replace me with an appropriate call to OpenSearch
+    response = opensearch.search(
+        body = query_obj,
+        index = "bbuy_products"
+    )
     # Postprocess results here if you so desire
 
     #print(response)
@@ -108,14 +111,70 @@ def query():
 
 def create_query(user_query, filters, sort="_score", sortDir="desc"):
     print("Query: {} Filters: {} Sort: {}".format(user_query, filters, sort))
+    bool_query = {
+                "must": {
+                    "query_string": {
+                    "fields": ["name", "shortDescription", "longDescription"],
+                    "query": user_query,
+                    "phrase_slop": 3
+                    }
+                }
+            }
+    if filters is not None:
+        bool_query = {
+                "must": {
+                    "query_string": {
+                    "fields": ["name", "shortDescription", "longDescription"],
+                    "query": user_query,
+                    "phrase_slop": 3
+                    }
+                },
+                "filter" : filters
+            }
     query_obj = {
         'size': 10,
         "query": {
-            "match_all": {} # Replace me with a query that both searches and filters
+            "bool": bool_query
         },
         "aggs": {
             #### Step 4.b.i: create the appropriate query and aggregations here
-
-        }
+            "regularPrice": {
+                    "range": {
+                        "field": "regularPrice",
+                        "ranges": [
+                            { "key": "$", "to": 100.0 },
+                            { "key": "$$", "from": 100.0, "to": 200.0 },
+                            { "key": "$$$", "from": 200.0, "to": 400.0 },
+                            { "key": "$$$$", "from": 400.0, "to": 1000.0 },
+                            { "key": "$$$$$", "from": 1000.0, "to": 1000.0 }
+                        ]
+                    }
+                },
+            "department": {
+                "terms": {
+                    "field": "department.keyword",
+                    "size": 10
+                }
+            },
+            "missing_images": {
+                "missing": {
+                    "field": "image.keyword"
+                }
+            }
+        },
+        "highlight": {
+            "fields": {
+            "name": {},
+            "shortDescription": {},
+            "longDescription": {}
+            }
+        },
+        "sort": [
+            {
+                sort: {
+                    "order": sortDir
+                }
+            }
+        ]
     }
     return query_obj

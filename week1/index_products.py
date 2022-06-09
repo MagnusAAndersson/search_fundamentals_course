@@ -60,7 +60,14 @@ def get_opensearch():
     auth = ('admin', 'admin')
 
     #### Step 2.a: Create a connection to OpenSearch
-    client = None
+    client = OpenSearch(
+        hosts=[{'host': host, 'port': port}],
+        http_compress=True,  # enables gzip compression for request bodies
+        http_auth=auth,
+        use_ssl=True,
+        verify_certs=False,
+        ssl_assert_hostname=False,
+        ssl_show_warn=False)
     return client
 
 
@@ -90,8 +97,15 @@ def main(source_dir: str, index_name: str):
                 continue
 
             #### Step 2.b: Create a valid OpenSearch Doc and bulk index 2000 docs at a time
-            the_doc = None
+            the_doc = {'_index': index_name , '_source': doc}
             docs.append(the_doc)
+            if len(docs) % 2000 == 0:
+                bulk(client, docs, request_timeout=60)
+                docs_indexed += 2000
+                docs = []
+        if len(docs) > 0:
+            bulk(client, docs, request_timeout=60)
+            docs_indexed += len(docs)
     toc = time.perf_counter()
     logger.info(f'Done. Total docs: {docs_indexed}.  Total time: {((toc - tic) / 60):0.3f} mins.')
 
