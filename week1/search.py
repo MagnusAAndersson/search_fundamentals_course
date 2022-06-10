@@ -111,30 +111,56 @@ def query():
 
 def create_query(user_query, filters, sort="_score", sortDir="desc"):
     print("Query: {} Filters: {} Sort: {}".format(user_query, filters, sort))
-    bool_query = {
-                "must": {
-                    "query_string": {
-                    "fields": ["name", "shortDescription", "longDescription"],
-                    "query": user_query,
-                    "phrase_slop": 3
-                    }
+    #Empty filters field throws error, hence the breakdown of must and bool queries
+    must_query = {
+                "query_string": {
+                "fields": ["name^100", "shortDescription^50", "longDescription^10"],
+                "query": user_query,
+                "phrase_slop": 3
                 }
+            }
+    bool_query = {
+                "must": must_query
             }
     if filters is not None:
         bool_query = {
-                "must": {
-                    "query_string": {
-                    "fields": ["name", "shortDescription", "longDescription"],
-                    "query": user_query,
-                    "phrase_slop": 3
-                    }
-                },
+                "must": must_query,
                 "filter" : filters
             }
+
     query_obj = {
         'size': 10,
         "query": {
-            "bool": bool_query
+            "function_score": {
+                "query": {
+                    "bool": bool_query
+                },
+                "functions": [
+                    {
+                    "field_value_factor": {
+                        "field": "salesRankShortTerm",
+                        "missing": 100000000,
+                        "modifier": "reciprocal"
+                    }
+                    },
+                    {
+                    "field_value_factor": {
+                        "field": "salesRankMediumTerm",
+                        "missing": 100000000,
+                        "modifier": "reciprocal"
+                    }
+                    },
+                    {
+                    "field_value_factor": {
+                        "field": "salesRankLongTerm",
+                        "missing": 100000000,
+                        "modifier": "reciprocal"
+                    }
+                    }
+                ],
+                "score_mode": "avg",
+                "boost_mode": "multiply"
+            }
         },
         "aggs": {
             #### Step 4.b.i: create the appropriate query and aggregations here
