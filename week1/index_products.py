@@ -114,9 +114,18 @@ def index_file(file, index_name):
         if 'productId' not in doc or len(doc['productId']) == 0:
             continue
         #### Step 2.b: Create a valid OpenSearch Doc and bulk index 2000 docs at a time
-        the_doc = None
+        if doc["name"] and len(doc["name"]):
+            doc["suggest"] = doc["name"] # copy over name to suggest for typeahead
+            doc["canonical"] = doc["name"][0].strip().title().encode("ascii", "ignore").decode()
+        the_doc = {'_index': index_name , '_source': doc}
         docs.append(the_doc)
-
+        if len(docs) % 2000 == 0:
+                bulk(client, docs, request_timeout=60)
+                docs_indexed += 2000
+                docs = []
+    if len(docs) > 0:
+        bulk(client, docs, request_timeout=60)
+        docs_indexed += len(docs)
     return docs_indexed
 
 @click.command()
@@ -127,35 +136,6 @@ def main(source_dir: str, index_name: str, workers: int):
 
     files = glob.glob(source_dir + "/*.xml")
     docs_indexed = 0
-    tic = time.perf_counter()
-    for file in files:
-        logger.info(f'Processing file : {file}')
-        tree = etree.parse(file)
-        root = tree.getroot()
-        children = root.findall("./product")
-        docs = []
-        for child in children:
-            doc = {}
-            for idx in range(0, len(mappings), 2):
-                xpath_expr = mappings[idx]
-                key = mappings[idx + 1]
-                doc[key] = child.xpath(xpath_expr)
-            # print(doc)
-            if not 'productId' in doc or len(doc['productId']) == 0:
-                continue
-
-            #### Step 2.b: Create a valid OpenSearch Doc and bulk index 2000 docs at a time
-            the_doc = {'_index': index_name , '_source': doc}
-            docs.append(the_doc)
-            if len(docs) % 2000 == 0:
-                bulk(client, docs, request_timeout=60)
-                docs_indexed += 2000
-                docs = []
-        if len(docs) > 0:
-            bulk(client, docs, request_timeout=60)
-            docs_indexed += len(docs)
-    toc = time.perf_counter()
-    logger.info(f'Done. Total docs: {docs_indexed}.  Total time: {((toc - tic) / 60):0.3f} mins.')
     start = perf_counter()
     with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(index_file, file, index_name) for file in files]
