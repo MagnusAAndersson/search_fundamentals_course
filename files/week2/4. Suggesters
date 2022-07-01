@@ -1,0 +1,413 @@
+Suggesters: Autocomplete, Instant Search and Spellchecking in OpenSearch
+Suggesters: Autocomplete, Instant Search and Spellchecking in OpenSearch
+Spelling Suggestions
+Autocomplete and Instant Search
+The techniques for implementing autocomplete, instant search and spell checking are deeply related in OpenSearch, so we are going to tackle them both in this section.  We will use the word “suggester” throughout this section as a stand-in for either autocomplete, instant search or spell checking, since they all offer the user a suggestion of what their query or result might be instead of what it is currently.
+
+When building a suggester, there are several factors that you should consider:
+
+What is the source of “truth” for the suggester?  Best in class is typically a combination of your query logs (along with weights), your index (or a subset) and possibly an actual dictionary. In order to achieve this, you often have to do offline work to intersect your query logs and your index, which we will not cover in this class.
+
+What type of suggester to support?  OpenSearch (and Elasticsearch) supports term, phrase and “completion” suggesters. We’ll cover each of these below. Solr offers similar implementations. Note, that each of these types will have different quality and speed tradeoffs, so you will need to experiment.
+
+Separate index or inline?  Inline is simpler to maintain but can cause competing performance demands on your system, especially on memory.  Separate can be scaled independently of search, but care must be taken to keep it in sync with your main index, lest you suggest items that are no longer in your index.
+
+In many cases, spell checking can be handled directly at query time, automatically, behind the scenes by leveraging fuzzy query matching capabilities.
+
+Spelling Suggestions
+One of the nice things about Suggesters in OpenSearch is you can get started directly from any index that has text fields.  Building on our toy examples from week 1 and using suggesters_w2.dev to follow along, let’s see this in action.  For brevity’s sake, we will skip the section marked as # SETUP in the suggesters_w2.dev file.  If you are trying this on your own, please be sure to run the setup portion (index creation and document ingestion) before running the examples.
+
+To start, note that suggestions are generated using the _search endpoint, just like query and aggregation requests.
+
+As discussed earlier, integrating spelling suggestions into the search experience depends on how you implement them. If you are replacing the query with the output of the spelling suggester, you should probably let the user know – and you should consider providing an escape hatch to the original query in case the original query was really what the user meant. If you’re less confident, you could include a “did you mean” link at the top of the results. Or you could perform query expansion, including results for the queries returned by the spelling suggester along with those for the original query.  
+
+In contrast, autocomplete query suggestions generally appear in a drop-down as the user types the search query. We’ll return to these in the next section.
+
+A simple way to implement spelling suggestions in OpenSearch is to use a term suggester. As the name, ahem, suggests, it looks at each query token individually and returns 0 or more spelling suggestions for each token. This type of suggester is simple, but be aware that it will not take into account any query context as it produces token-specific suggestions. For each token, it determines suggestions by analyzing similar terms in the index and suggesting alternatives that are within the configured edit distance (sometimes called Levenshtein Distance) of each term.
+
+Using the Dev Tools console (you can follow along in suggesters_w2.dev), this might look like:
+
+
+GET /suggesters_index/_search
+
+{
+
+  "suggest": {
+
+    "text": "huonds",
+
+    "term_suggest":{
+
+      "term":{
+
+        "field":"title",
+
+        "min_word_length": 2,
+
+        "suggest_mode": "popular"
+
+      }
+
+    }
+
+  }
+
+}
+
+
+In this example, we passed in our text to generate suggestions from and then created a term suggester called “term_suggest”.  We told it to generate suggestions from the “title” field, and we also specified a minimum length for any word to be considered.  Setting the suggest_mode attribute to “popular” tells OpenSearch to only look at terms that occur in more documents than the original term, such that choosing that term would lead to more results.  Other options for suggest_mode include “missing” and “always”.  The former will only make a suggestion if the current term is not in the index and the latter, as the name implies, will always try to suggest, regardless of the quality of the suggestion.  Running the above example yields:
+
+
+Here is a sample image caption.
+
+
+In this example, you can see we corrected huond to hound.  It’s worth noting at this point there is a reason these are called suggestions and not corrections.  If your index contains incorrectly spelled words, a suggester may very well return those incorrectly spelled words as a suggestion.  This is especially likely to happen in user generated search use cases (e.g., Reddit) where misspellings are quite common, and sometimes more popular than the correctly spelled word.  How you choose to handle this is typically a product decision.  Technically, it is easily solved by post filtering your suggestions through a dictionary (e.g., Webster’s or Wikitionary). The key to keep in mind is that you are trying to lead the user to better results in the index, not just to “correct” their spelling mistakes.
+
+While term suggesters can be effective, they often fail with multi-term queries since they fail to take into account the context of the whole query.  For instance, a term suggester might suggest correcting the query “toe gum”  to “the gum”, but a more context-aware approach would probably suggest “top gun” – at least for a movie search application. In general, it’s better to take into account as much of the query context as possible when making suggestions for a query, rather than only considering each individual token in isolation.
+
+Fortunately, OpenSearch has a phrase suggester that serves this purpose, but we do need to do a little extra work upfront to index pseudo-phrases.  We say pseudo-phrases, because what we are going to do is index what are called word-based n-grams (e.g., bigrams and trigrams) and then feed them into the OpenSearch phrase suggester in order to generate phase-based suggestions.
+
+👀 Note: technically n-grams aren’t phrases in the true sense of what a phrase is, but it’s easier to say and write “phrases” than n-grams.  N-grams are simply sequences of characters or words/tokens.  So for instance, a subset of the word bigrams of that last sentence would be: [n-grams, are], [are, simply], [simply, sequences]...  The reason this all (mostly) works is that the index treats these n-grams like individual tokens, and then the power of TF-IDF kicks in to emulate the probability of two words co-occurring together in a given language.
+
+To see phrase suggestions in action, we need to first set up an n-gram analyzer in our index.  As mentioned earlier, n-grams can either be character sequences or token sequences.  Since there is some ambiguity in nomenclature, OpenSearch calls token-based n-grams “shingles”, and thus we need to set up a custom shingle analyzer for our index, using the following index setup, which can be run in the Dev Console:
+
+
+PUT /suggesters_index
+
+{
+
+  "settings": {
+
+      "analysis": {
+
+            "analyzer": {
+
+              "trigram": {
+
+                  "type": "custom",
+
+                  "tokenizer": "standard",
+
+                  "filter": ["lowercase","shingle"]
+
+                }
+
+            },
+
+            "filter": {
+
+              "shingle": {
+
+                  "type": "shingle",
+
+                  "min_shingle_size": 2,
+
+                  "max_shingle_size": 3
+
+                }
+
+            }
+
+          },
+
+        "index": {
+
+          "query": {
+
+              "default_field": "body"
+
+          }     
+
+        }
+
+    },
+
+    "mappings": {
+
+        "properties": {
+
+            "title": {
+
+              "type": "text", "analyzer": "english",
+
+              "fields":{
+
+                "trigrams":{
+
+                  "type": "text",
+
+                  "analyzer": "trigram"
+
+                }
+
+              }
+
+            },
+
+"completion":{
+
+                  "type": "completion"
+
+            },
+
+            "body": {"type": "text", "analyzer": "english"},
+
+            "in_stock": {"type": "boolean"},
+
+            "category": {"type": "keyword", "ignore_above": "256"},
+
+            "price": {"type": "float"}
+
+        }
+
+    }
+
+}
+
+
+The key things to notice here are:
+
+We created a custom analyzer named “trigram” which consists of a lowercase filter and a shingle filter.  We then configured the shingle filter to produce bi and trigrams via the min and max shingle size variables.  If you wish to see this in action, you can run something like:
+
+
+POST /suggesters_index/_analyze
+
+{
+
+  "analyzer": "trigram",
+
+  "text": ["Top Gun Gameboy Advance"]
+
+}  
+We added a subfield called “trigrams” to the “title” field that leverages this new analyzer. With this setup now in place, we can issue our phrase suggester request similar to our term suggester request with some additional features which will be explained below:
+
+
+GET /suggesters_index/_search
+
+{
+
+  "suggest": {
+
+    "text": "Thrie lattle pegs",
+
+    "phrase_suggest":{
+
+      "phrase":{
+
+        "field":"title.trigrams",
+
+        "direct_generator": [ {
+
+          "field": "title.trigrams",
+
+          "min_word_length": 2,
+
+          "suggest_mode": "popular"
+
+        } ],
+
+        "highlight": {
+
+          "pre_tag": "<em>",
+
+          "post_tag": "</em>"
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+We’ll cover the “completion” addition later, you can safely ignore it for now.
+
+
+
+The main things to note in this request are:
+
+We invoked the “phrase” suggester under the named suggester “phrase_suggest”.
+
+We used “title.trigrams” as our field to generate suggestions from
+
+We introduced the notion of a candidate generator (in this case, called “direct generator”) and configured it accordingly.  Candidate generators are responsible for producing a list of possible terms in the field specified.  It behaves similar to a term suggester and has similar configuration options like suggest_mode.
+
+We introduced a highlight specification.  This will highlight, in the phrases generated, where tokens were changed with the suggestion.
+
+
+
+In action, the above command results look like:
+
+
+Here is a sample image caption.
+
+
+It’s interesting to note that none of the variations produced “three little pigs”.  Digging into the docs and the phrase suggest API, yields this little nugget:
+
+
+Here is a sample image caption.
+
+
+Note the line: “The default is set to 1.0, meaning only corrections with at most one misspelled term are returned.”  Setting "max_errors": 3, in our request yields better results:
+
+
+Here is a sample image caption.
+
+
+👀 Note: If this is confusing, you’re not alone. In our opinion, this capability is flawed.  For instance, there is no way to say that each term in a multi-term query can be wrong, since as soon as you set the value to 1, you switch from fractional assessment to absolute assessment.  In other words, you can’t say 100% of the terms are wrong.  In the real world, it’s not likely that all the terms will be wrong, but given enough users it will happen.
+
+Before we move onto completion, it’s worth noting that with phrase suggesters, it’s possible to get a combination of terms that all exist in the index, but still yield zero results given your query parsing approach since they don’t appear near each other.  To combat this, you can use the “collate” feature, which, for an additional cost, will check a suggestion against the index using a passed in query.  For example:
+
+
+GET /suggesters_index/_search
+
+{
+
+  "suggest": {
+
+    "text": "Thrie lattle pegs",
+
+    "phrase_suggest":{
+
+      "phrase":{
+
+        "field":"title.trigrams",
+
+        "max_errors": 3,
+
+        "direct_generator": [ {
+
+          "field": "title.trigrams",
+
+          "min_word_length": 2,
+
+          "suggest_mode": "popular"
+
+        } ],
+
+        "collate": {
+
+          "query": { 
+
+            "source" : {
+
+              "match_phrase": {
+
+                "{{field_name}}" : "{{suggestion}}" 
+
+              }
+
+            }
+
+          },
+
+          "params": {"field_name" : "title"}, 
+
+          "prune": true 
+
+        },
+
+        "highlight": {
+
+          "pre_tag": "<em>",
+
+          "post_tag": "</em>"
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+In this example, our “collate” feature executes a “match_phrase” query with the given suggestion and then marks each suggestion as to whether it yielded results in the index or not:
+
+
+Here is a sample image caption.
+
+
+As you can see, the only suggestion that actually has a full phrase match (more relaxed queries will still yield results for this example) is “three little pigs”.
+
+As a last note on spell checking before we show autocomplete and instant search, note that spell checking, while easy to implement, can be difficult to get right.  Knowing when to show a suggestion is something that can and should be learned over time using statistical analysis and machine learning.
+
+Autocomplete and Instant Search
+As for spelling, we use suggesters to implement, autocomplete and instant search. But the similarity mostly ends there. Suggesters for autocomplete and instant search are usually built separately from the main content index due to the performance requirements of the associated user interfaces. Autocomplete and instant search interfaces generally issue a request to the system for every single character a user types into the query box (though they sometimes wait for a few characters or a delay between keystrokes). After all, the goal is to predict what the user is searching for in as few characters as possible.
+
+While there are several ways you can implement autocomplete and instant search, we are going to focus on using the completion suggester and apply it to both our index and our query logs.  If you wish to learn some other approaches, we recommend you read the Autocomplete Search Experience OpenSearch docs.
+
+As you may have noticed when we set up the trigrams custom analyzer earlier, we also specified a field called “completion” in our mappings: 
+
+
+"completion":{
+
+                  "type": "completion"
+
+             }
+
+
+The completion suggester is built on top of a data structure called a Finite State Transducer (FST), which is a fancy way of creating a graph that is optimized for fast prefix lookups.  The completion suggester lives in memory and is somewhat costly to compute, which is why we build it at indexing time and then load it into memory with our index.  
+
+👀 Note: If your index is fairly dynamic (meaning you get lots of updates), you will need to be careful about tuning your performance and garbage collection to handle your completion suggester.  For static indexes, performance is pretty straightforward in terms of tuning the memory allocated to the JVM.
+
+While we’ve already indexed our documents, it’s worth noting that when using the completion field type, we can pass along additional information to the FST builder, including weights and alternate forms of the same completion tokens. This can be seen in several of our example documents (see the #setup section of suggesters_w2.dev).  For example, in doc_c, we passed in: 
+
+"completion": [{"input":"Lead Paint Removal", "weight": 10}, {"input":"removal of lead paint", "weight": 5}]
+
+In this example, the prefixes of “lea” and “remov” will both yield completions to this same document, as we will see shortly.  The weights here are arbitrarily picked by the authors, but you could imagine them being tied to some sort of probability calculation based on the likelihood of that query leading to this document.
+
+To see this suggester in action, let’s submit a request:
+
+
+GET /suggesters_index/_search
+
+{
+
+  "suggest": {
+
+    "completion_suggest":{
+
+      "prefix": "remo",
+
+      "completion":{
+
+        "field":"completion"
+
+      }
+
+    }
+
+  }
+
+}
+Note: instead of using a “text” attribute, we are now using a “prefix” attribute.  Unlike spell checking, completion suggesters are designed to work on prefixes and unless you specifically introduce fuzziness factors (see also how to use regex), they will not respond well to words that are not in the FST.
+
+Our results look like: 
+
+
+Here is a sample image caption.
+
+
+Unlike with spell checking, our result structure here has changed as well.  In fact, these results look a lot like our search results, even though they are wrapped in some additional layers.  This is how we can leverage the completion suggester to do instant search! Simply point your instant search functionality at a completion field in your main index built on the content of your main documents, such as the title or name.  For an example of this, checkout Wikipedia’s type ahead:
+
+
+Here is a sample image caption.
+
+
+When a user selects one of these entries, they are taken directly to the page, as opposed to executing a search for all instances of that term in the index.  If you want to search for pages containing “bobby”, you have to choose the very last item of the list.  Even in the case of the user selecting the first “Bobby”, a search is not executed, but instead you are taken to a specific page on Bobby.
+
+You might be wondering at this point how we can complete queries that yield general searches and not exact documents?  The answer lies not in the suggester, but in the content it uses to make suggestions!  To get query completions instead of instant search results, we need to point our completion suggester at an index of queries!  The rest is exactly like you see above.
+
+Some notes on creating an autocomplete index based on queries:
+
+You will need to capture your queries and store them somewhere.  You should be doing this regardless of whether you implement autocomplete, but we are stating it anyway to be explicit.
+
+You will have to preprocess your queries for your autocomplete index to only include queries that result in matches in your index.  This can be expensive and should be done offline, even if there are ways you can do it online.
+
+You will need to normalize your queries and work through how you want to handle variants of the same query and what weights to assign them.  This is often a data science task, but at a minimum you will probably want to group queries that are similar except for case and slight spelling differences.  Weights can be based on the number of times a query occurs in your query log.
+
+
+
+Guess what? For our project this week, we are going to build a query log index for use in autocomplete!  So rather than belabor the details here, let’s get going on our project!

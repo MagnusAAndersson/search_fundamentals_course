@@ -1,0 +1,43 @@
+Appendix
+Common Terminology
+Due to their roots in text search, most search libraries use the following terms when describing how content is made available for searching, which we will adopt for this class:
+
+Document -- A document is the main unit of retrieval, and is analogous to a row or a record in a database. A document is a logical grouping of one or more fields, much as a row or record is a grouping of columns. Most search engines allow documents to have a variable number of fields on them. Some search engines require a defined schema describing documents, but most (including OpenSearch / Elasticsearch and Solr) are schemaless, meaning that you can index the documents first and then decide which fields you want to use to access them later.
+Field -- Analogous to a column in a database, a field represents the main unit of searching: a typical search query specifies keywords and one or more fields, and the search engine returns the documents matching those keywords in the specified fields. Fields are also important for faceting (i.e., filtering by field values) and aggregation (e.g., sums and averages). Fields usually have a data type (e.g. text, boolean, float). In order to support search use cases, you may find it useful to derive multiple fields from the same raw data, e.g., representing a location as both a place name and a latitude-longitude pair: “San Francisco, CA” and (37.7749° N, 122.4194° W).
+Inverted Index -- The data structure used to represent documents and fields for efficient retrieval based on search queries. The model is similar to the old-fashioned “back of the book” index that associates each word with the pages where that word occurs. An inverted index maps words (actually tokens, which we’ll get to in a moment) to the documents and specific fields containing those words. It generally encodes positional information, which is useful for certain search queries (e.g., quoted phrases). An important implementation detail: the documents for each word are sorted in a consistent document-id order, which enables efficient set operations like intersection and union.
+Forward Index - A data structure that maps each document to some of its field values. It does not provide the efficiency benefits of the inverted index for retrieval, but it can be useful for certain kinds of filtering that require evaluating a function on each result, as well as for decorating search results to determine how to present them in the search results page. The forward index is particularly useful for aggregation and faceting.
+Indexing -- The process of ingesting raw content into an index to make it searchable – mostly, the construction and maintenance of the inverted index. Indexing is generally part of a larger pipeline to extract, transform, and load (ETL) content.
+Token -- A token is the main unit of indexing and searching. A token usually corresponds to a single word, number, or alphanumeric identifier. But a token may be a processed word; for example, it could be a stemmed word. As we will discuss, tokenization – the process of transforming both queries and content into sequences of tokens – is a critical part of designing a search application.
+Search Query -- We use this term to refer to the words the user types into the search box (along with any filters), as well as the engine’s internal representation of the query.
+Analyzer -- A process that converts the raw text of a field or query to a simplified form through steps such as converting alphabetic characters to lowercase and tokenization by splitting on spaces or other separators. For search to work properly, the analyzers for content and queries must be aligned, typically by calling the same analyzer function.
+Shard -- A large index, especially one that is too large to fit on a single server, can be split into several smaller indexes that are called shards. Sharding is also called horizontal scaling. The search engine generally queries all of the shards in parallel and merges their results. Sharding introduces some complexity, both because the application has to handle the failure of individual shards and because certain kinds of aggregations (e.g., counting distinct ids to deduplicate variants of a document or product) may not be straightforward across shards.
+Scaling Indexing (and searching)
+While this is not a class on search engine operations or one that is focused on questions of scale, it is worth spending a little bit of time explaining how search engines scale because it can, at times, have implications on the results. Search engines, like many other scalable databases, take an approach of sharding and replicating subsections of the index, called shards in the architecture diagram above and from here on out, so that these shards can be distributed across multiple processes and multiple computers. In most engines, each shard is it’s own index that can be queried as if it were on its own. Copies of each shard, called replicas, can also be made and distributed so that the engine can handle more query load. In order to make shards and replicas work, the indexing process must be able to reliably route documents to an appropriate shard for indexing and reliably make copies of each shard and distribute the replicas.
+
+
+
+At query time, the query is submitted to at least one replica for each shard (unless we can submit to fewer shards using a priori knowledge) and each replica ranks it’s results and then sends back the results to a coordinating node that then collates the results and returns the top results. Thus, scaling asks two questions:
+
+Have more documents? Add more shards (usually requires some re-indexing)
+Have more queries? Add more replicas
+We said earlier sharding can sometimes have implications on the results, here’s how: since each shard is it’s own index, it has its own statistics about its documents that none of the other shards knows about. In order to reliably rank the results, the coordinating node needs to know how to compare the score from one shard with the score from another. The primary way most engines do this is by maintaining a global copy of all word document frequencies. It turns out that this information applied in the right way is enough to create a comparable score across all shards.
+
+Search Resources
+You may find the following resources helpful for learning more about search:
+
+ACM Special Interest Group in Information Retrieval (SIGIR)
+OpenSearch and Elasticsearch](https://opensearch.org/):
+Opensearch website
+Elastic website
+Opensearch vs Elasticsearch
+Elastic’s view
+Amazon’s view
+Elasticsearch in Action by Madhusudhan Konda
+Older books that cover the basics of search:
+Modern Information Retrieval 2nd Ed, 2011 by Baeza-Yates and Ribeiro-Neto
+Taming Text, 2013 by Ingersoll, Morton and Farris
+Faceted Search by Tunkelang
+Relevant Search: With applications for Solr and Elasticsearch by Turnbull and Berryman
+Managing Gigabytes, 1999 by Witten, Moffat & Bell.
+Apache Lucene
+Apache Solr

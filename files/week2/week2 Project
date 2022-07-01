@@ -1,0 +1,512 @@
+Our project this week is focused on building a working autocomplete and spell checking into our application. Similar to last week, we will break down our work into multiple levels. This week, you will:
+
+Level 1: Improve Matching and Ranking (required, with one optional subsection): You’ll look at how to use custom analyzers and fuzzy matchers to improve matching and learn to leverage query-dependent and independent factors to improve ranking.
+
+Level 2: Implement spell checking using term and phrase suggesters (Required): You’ll implement a simple “did you mean” spelling suggester.
+
+Level 3: Implement autocomplete and instant search using our product and query indexes (Required): You’ll build out both autocomplete and instant search.
+
+Dataset
+
+We will be using the same dataset we did in week 1.  
+
+Setup
+
+Our setup is the same as week 1, which is included below for convenience.  
+
+To complete this project, you will need to do the following to connect and configure your environment:
+
+FORK the class GitHub repository to your own GitHub account if you haven’t already.
+
+Setup your base Gitpod instance per the README, using week 2 for the Python requirements, Flask App, etc.
+
+Create a new Gitpod Workspace for this week
+
+Download the Best Buy Data to your instance as you did last week.
+
+You will need your Kaggle API token for this step.  Since this is a new workspace, you will need to install it again, as in the README.
+
+❗️👀You may reuse your workspace again from last week.  If you do, you will need to delete your indexes by running the delete-indexes.sh script, as we will be changing our index.
+
+If you get stuck on any of these steps, please ask in our Slack channels.  We don’t want you wasting your valuable time on setup issues!  Our TAs are here to help.
+
+Changes from Week 1
+
+We have made some changes to the way we index and search for week 2. These changes include:
+
+A new conf folder for capturing project specific configurations for the week.  See week2/conf 
+
+We created some utility/helper classes for some functions that we need to use in multiple places.  See the week2/utilities folder.
+
+We made a number of changes to how we create our query object in query_utils.py to better handle spelling errors, phrase matching and sales rank.  We arrived at these values based on our understanding of how OpenSearch and Lucene work, as well as trial and error.  YMMV.  We will explain some of these as part of the project and point you at the documentation for them to explore on your own.  If you are unsure of what they do, feel free to ask!  Also note, there are likely better formulations as well, so don’t take them as gospel!
+
+We’ve changed the way query indexing is done to focus on suggestions instead of the raw query logs.
+
+Project Instructions
+
+To help you navigate the codebase, all code you have to edit will be labeled with a comment associated with that step of the project. This does not apply to JSON, since there are no comments allowed in JSON.
+
+As an example, you might see something like:
+
+##### Step 2.c marked in the text below and in the corresponding Python file in the codebase.
+
+Level 1: Improving Matching and Ranking
+
+For this level, we’re going to explore three common ways of improving matching ranking:
+
+Handling language “oddities” through query matching and content analysis
+
+Using query-independent factors like sales rank
+
+Using query-dependent factors like query logs (Optional)
+
+To set the stage, let’s consider a few common scenarios that happen in search:
+
+Scenario 1: Marketing Terms, Branded Products and other abuses of a language
+
+Quick, what’s the proper spelling of Apple’s flagship phone?  Is it: a) iphone, b) i phone, c) iPhone, or d) i-phone?
+
+Next question: which of the following queries should result in finding the car BMW C 300 4MATIC: a) BMW C300, b) BMW 4MATIC, c) BMW c 300 d) all of them.
+
+For the first question, the answer is C, for the second, the answer is D.
+
+In all cases, these are all likely (valid?) ways your users will query your search engine. Luckily, OpenSearch has tools to help us handle these types of scenarios, most notably in this case, the Word Delimiter Filter Graph as well as fuzzy query matching, both of which we will explore in this part of the project.  Additionally, in cases where OpenSearch can’t handle them, we can build our own tokenizers, filters, and analyzers.  The latter is outside the scope of this class, but there are resources online to help you if need be.
+
+Scenario 2: Query-Independent Factors AKA Popularity FTW!
+
+Can you name your best-selling product?  What about your most popular document in your search engine or on your website?  If you’ve been operating a search engine or a business for long enough to have some notion of the overall popularity or authoritativeness of any or all of items in your index, chances are such that, regardless of query, if you boosted the resulting documents by this known ranking value, your results are likely to be better.
+
+Popularity, sales rank, page rank and other query-independent factors are often very strong signals for ranking.  This intuitively makes sense. When someone searches for iPhone, odds are they want either the top-selling phone itself or a top-selling accessory, and not just something that matches iPhone based on TF-IDF.  Since you explored much of this in week 1 with our work on sales rank, we will not include it here.  However, note that we have updated our create_query method for week 2 to include a different way of incorporating sales rank that takes advantage of OpenSearch’s decay function capability.  Take a moment to familiarize yourself with this approach.  Can you improve on it?
+
+Scenario 3: Query-Dependent Factors: Past Behavior Strongly Predicts Future Behavior in Search
+
+What’s better than global factors for predicting future user behavior? Actual user behavior! Humans, as a whole, like to do things other humans like to do.  Call it “group think” or the hive mind or whatever, but knowing and leveraging prior interactions with your engine is one of the single most effective things you can do to improve relevance.  At its simplest, you can boost documents based on what documents were clicked on the most by users who previously executed the same (or similar) query.  At a more advanced level, you can use click models to build advanced, machine learning driven, ranking systems.  We will not cover the latter in this class, but we do in our Search with Machine Learning class. You can optionally do the former in level 1 below.
+
+Indexing
+
+With the stage set, let’s see some of these ideas in action. For week 2, we need to re-index our products and create a new index for our query logs (so we can use them for query-dependent signals and autocomplete).  Since indexing of our products takes ~30 minutes, we are also going to do some setup here for levels 2 and 3 during indexing to save us from having to re-index later in levels 2 and 3. 
+
+Products Index
+
+For the products index, we are going to introduce two new types of analysis into our index settings and use these analyzers to create some additional fields.  For this week, you should be working from week2/conf/bbuy_products.json, which has a baseline field mapping created by your instructors.  We will also be using week2/index_products.py to index our products, which should be very similar to what you produced in week 1. 
+
+Complete the following tasks:
+
+In week2/bbuy_products.json add the following things:
+
+Finish creating the custom analyzers by providing appropriate definitions for the “shingle” and “smarter_hyphens_filter”.  Your job is to fill in the “TODO”: “REPLACE ME” sections.
+
+For “shingle”, configure it to output bigrams (minimum) and trigrams (maximum)
+
+For the “smarter_hypens_filter”, configure the Word Delimiter Graph filter to “catenate” words and “catenate” all.
+
+👀Hint: You may find it easier to test out your configurations in the Dev console and then testing them using the analyze endpoint and some example text.  See suggesters_w2.dev for examples.
+
+Add a subfield called “hyphens” to the “name” field and configure it as a “text” type with an analyzer named “smarter_hyphens”.
+
+Create a “suggest” field with type “completion”.  Give it two subfields, one with name “trigrams” and type “text” and the trigram analyzer; and one with name “text” and of type “text” and an English analyzer.  We’ve marked the spot in the file with:
+
+"TODO: REPLACE WITH SUGGEST": {
+
+        "REPLACE": "REPLACE"
+
+      },
+
+Complete the Query Index subsection below before running a complete indexing
+
+Query Index
+
+Complete the following tasks:
+
+Familiarize yourself with /workspace/datasets/train.csv located in the BBuy Dataset.  What columns are there?  How many rows are there? What types of data are saved in it?
+
+In week2/bbuy_queries.json, we’ve provided a baseline field mapping.  Your job is to configure it for autocomplete use:
+
+Create a “suggest” field with type “completion”.  Give it two subfields, one with name “trigrams” and type “text” and the trigram analyzer and one with name “text” and of type “text” and an English analyzer.  We’ve marked the spot in the file with:
+
+"TODO: REPLACE WITH SUGGEST": {
+
+        "REPLACE": "REPLACE"
+
+      },
+
+
+Once you’ve completed both the Product Index and Query Index subsections, you can index our content by issuing the following command:
+
+./index-data.sh -y ./week2 -p ./week2/conf/bbuy_products.json -q ./week2/conf/bbuy_queries.json
+
+Confirm your index has the following counts, when completed:
+
+Product index: 1,275,077
+
+Query Log index: 200,792
+
+👀Note: We are indexing queries differently this week, so our counts are different than in week 1, primarily so we can collapse similar queries to make better suggestions (e.g., iPad and ipad). Have a look at week2/index_queries.py to see the differences. 
+
+Improving Matching
+
+Name vs Name Hyphens
+
+With your index now built, let’s try out a few things in the Dev Console to test out how these changes work and how they yield better matching (note: we didn’t say better relevance or ranking!)
+
+First, let’s look at our smarter hyphens in action.  Do the following:
+
+Either copying and pasting from the template below into the Dev Tools Console (or copy and paste from  opensearch/dev_tools_w2_matching.dev:
+
+GET bbuy_products/_search
+{
+  "query": {
+    "match": {
+      "name": ""
+    }
+    
+  },
+  "_source": "name"
+}
+
+GET bbuy_products/_search
+{
+  "query": {
+    "match": {
+      "name.hyphens": ""
+    }
+  },
+  "_source": "name"
+}
+
+For each of these query templates (name vs name.hyphens), try the following queries and note which ones return: a) Zero results, b) an iPhone related product (either the phone itself or an accessory), c) non-iPhone related products:
+
+iPhone
+
+i phone
+
+I-phone
+
+iPhone4
+
+Iphone4
+
+Check the Project Assessment section below for comparison
+
+Fuzzy Matching
+
+If your results mirrored ours, when you searched for iphone4 with both “name” and “name.hyphens”, you got zero results.  One possible way of fixing this is through fuzzy matching.  Fuzzy matching is a built-in query mechanism for many OpenSearch query types that automatically produces alternate spellings for query terms based on edit distance.  So, for instance, the term “iPhone”, when using a fuzzy matching factor, might simply become “phone”.
+
+Let’s try this out.  In the Dev Console, let’s modify our query a bit so that we can pass in additional parameters to the “match” query, like so:
+
+GET bbuy_products/_search
+{
+  "query": {
+    "match": {
+      "name":{
+        "query": "iphone4"
+      }
+    }
+  },
+  "_source": "name"
+}
+
+Alter this query to add in a “fuzziness” factor of 1 and then 2.  Rerun the query for each case and check your results in the Project Assessment section.
+
+Feel free to explore the other fuzziness factors on your own.  For instance, it's often the case that people get the first few characters of their query correct, but then mess up the spelling later.  What happens to your query results for “iphone4” if you set the prefix length?
+
+Before moving on to ranking, have a look at week2/utilities/query_utils.py and observe how we incorporated these concepts into the creation of our query object.  If you want, you can try them out in the Flask app by commenting them out and see how they perform on queries like “iPhone”, “dinsey” (spelling) and various other edge case queries.
+
+Optional: Improving Ranking 
+
+As discussed earlier in the content and the project, improving ranking can be done through both query-independent means (e.g., sales rank) and query-dependent means (e.g., query-click pairs). Since we explored things like sales rank last week, this week we are going to look at how to use query logs without resorting to machine learning via a simple, but surprisingly effective statistical lookup approach.  In this section, we’ve wired in some code to load in our clicks for you, and your job will be to leverage them to create a new query.
+
+👀Note: We could also query our query index, but this is faster and easier to process since the data is static.
+
+As a precursor, have a look at week2/__init__.py, where we’ve included loading our train.csv dataset from the file system and shoving it into Flask’s application context for access at query time.  In this code, we build up a Pandas DataFrame (`priors`) and a GroupBy (`priors_gb`) object, which can be used to create a simple, query-dependent set of boosts by query-document pair.
+
+Now, let’s dig in and do some coding.  For this section, we are using Pandas.  You may wish to familiarize yourself with the basics before proceeding, especially the basics of grouping and iteration.
+
+To complete this optional section, do the following:
+
+#### W2, L1, S1: In week2/utilities/query_utils.py, implement the add_click_priors method that takes in our current query object, the user query and the GroupBy data and produces a query object that can be added to our main query object (via query_obj["query"]["function_score"]["query"]["bool"]["should"].append(click_prior_query_obj) and does the following:
+
+Searches the id or SKU field (since they are synonymous in our case) for all IDs/SKUs that received at least one click for the given user query in the priorsgb GroupBy data.
+
+Boost those IDs/SKUs by the total number of times that item was clicked divided by the total number of times that query was issued.
+
+Hint: Term and Terms query are “sort of” what you want, but are either cumbersome (Term) or can only apply one boost for all terms (Terms).  What type of query allows you to pass in a string of tokens along with boosts and parses them into a query? 
+
+Hint: Part of your query might look something like this (with different IDs/SKUs depending on your query): 1945674^0.026  1945595^0.080  9947181^0.011
+
+#### W2, L1, S2: In week2/search.py, invoke your add_click_priors function to append your newly created priors query onto the main query object. (Hint: there are two places this needs to be done)
+
+Before running the UI again (e.g., flask run), be sure PRIOR_CLICKS_LOC is pointed at train.csv.  If you are using Gitpod, it should do this by default when you run flask run for week2.
+
+In your UI, do some basic testing of queries, for instance, “iPad” and “lcd tv”. Do your results change when you add or remove the prior clicks and their weights?
+
+Depending on how you implemented your query, you may not notice a change in results.  In our case, the sales rank factors far outweighed the click prior factors until we boosted our click priors on the whole.
+
+Level 2: Implementing spell checking using term and phrase suggesters (Required)
+
+In many cases, no amount of autocomplete, custom analyzers, fuzzy matchers or other ranking factors can overcome the fact the user’s query is misspelled and yields poor results.  In these cases, the best thing you can do is return (hopefully) better suggestions on how the query might be improved. Or, as you often see on major search engines, you might even perform the search you think the user should have done and ask them if they really want to do their search, as in my ill-fated attempt to look for “prince musician”:
+
+Knowing when to do the latter (swap the user’s query for a “better” query) is beyond the scope of this class, but as we saw in the content, we can leverage OpenSearch to generate spelling suggestions.  To complete this level, implement the following:
+
+#### W2, L2, S1: In week2/utilities/query_utils.py, implement the add_spelling_suggestions method that takes in our current query object, and the user query and appends to the query_object two suggesters with the following names and attributes:
+
+“term_suggest”: A term suggester with “suggest_mode” popular and a “min_word_length” of 3. It should suggest using the suggest.text field you created at indexing time earlier in Level 1.
+
+“phrase_suggest”: A phrase suggester that uses the suggest.trigrams field and a direct_generator.  The generator should also use the popular suggest_mode and a min_word_length of 2 and a highlight parameter.
+
+#### W2, L2, S2: In week2/search.py, invoke your add_spelling_suggestions function to append your newly created suggesters onto the main query object. (Hint: there are two places this needs to be done)
+
+In the UI, try out a variety of queries and see how your suggester performs. 
+
+Capture and share in your evaluation what suggestions you got for both term and phrase for the following queries: iPad, led tv, ipod, prance, asdef, 1945674
+
+Hint: if you aren’t seeing suggestions in the UI, check that your term suggester is named “term_suggest” and your phrase suggester is named “phrase_suggest”, as the UI is looking for those names in week2/templates/did_you_mean.jinja2
+
+For example: <label>Phrase suggestions</label>: {{ search_response.suggest.phrase_suggest[0].options[0].highlighted }}
+
+Bonus: Write down a paragraph or two on how you might evaluate your spell checking system in the real world.  What metrics would you capture?
+
+Level 3: Implementing autocomplete and instant search using our product and query indexes (Required)
+
+Rather than correct a query gone bad after the fact, let’s see if we can guide the user up front to better results using both autocomplete and instant search.  For this level, we’ve implemented both functionalities in the UI via the same autocomplete Javascript add-in (there are other Javascript libraries you can use, we chose this one since it seems to be maintained and has very few dependencies):
+
+Instant Search: 
+
+Autocomplete: 
+
+Autocomplete happens by searching against the Queries index.  Instant search happens by searching the Products index.  This is due to the way the “completion” field type works.
+
+Your task will be to implement the behind the scenes that make autocomplete and instant search work!  To complete this level, do the following:
+
+##### W2, L3, S1: In week2/search.py, implement the autocomplete method to make a separate search request from the main query request using the following requirements:
+
+Create a Suggester named “autocomplete” that suggests based off the “suggest” field (recall the “suggest” field is of type “completion” back in Level 1) and the “prefix” value that is passed into the “autocomplete” endpoint.
+
+If the type is “queries”, run the suggester against the bbuy_queries” index.  If the type is “products”, run against the bbuy_products` index.
+
+Configure the suggester to remove duplicates (hint: see the completion documentation)
+
+Hint: remember, a suggester request is just like any other search request, so you submit it to OpenSearch the same way you submit searches.
+
+Hint: results = search_response['suggest']['autocomplete'][0]['options'] is how the UI is expecting results (from search.py), so if you aren’t seeing any results in the UI, check that you are returning the right payload.
+
+Verify your results in the UI using the following query prefixes against both the Products index and the Queries index: Appl, Apple i, Apple ip, Apple Mac, lcd, asdef.  See the Project Assessment for our results.
+
+Hint: The UI is wired to only autocomplete prefixes with at least 3 characters.  See week2/templates/search_box.jinja2 for details on how the UI aspects of autocomplete were implemented.
+
+Bonus: Write down a paragraph or two on how you might evaluate your autocomplete or instant search system in the real world.  What metrics would you capture?
+
+Project Assessment
+
+Improving Matching
+
+Name vs Name Hyphens
+
+i phone 
+
+Name: Non-zero results, but no actual iPhone related products
+
+Name Hyphens: Non-zero results, actual iPhone related products
+
+iphone
+
+Name: Non-zero results, actual iPhone related products
+
+Name Hyphens: Non-zero results, actual iPhone related products
+
+It’s worth noting here that the rankings here are not identical!  Why is that?
+
+I-phone
+
+Name: Non-zero results, but no actual iPhone related products
+
+Name Hyphens: Non-zero results, actual iPhone related products
+
+iPhone4
+
+Name: Zero results
+
+Name Hyphens: Non-zero results, actual iPhone related products
+
+iphone4
+
+Name: Zero results
+
+Name Hyphens: Zero results!  (Word delimiter does wonders, but it can’t solve everything!)
+
+Fuzzy Matching
+
+“fuzziness”: 1: Non-zero results, all iPhone related.
+
+“fuzziness”: 2: Non-zero results, lots of “phone” matches, but no iPhone matches.
+
+Example fuzzy query:
+
+GET bbuy_products/_search
+{
+  "query": {
+    "match": {
+      "name":{
+        "query": "iphone4",
+        "fuzziness": 2
+      }
+      
+    }
+  },
+  "_source": "name"
+}
+
+Improving Ranking
+
+Code solution provided in Slack.
+
+Spelling Suggesters
+
+Code solution provided in Slack.
+
+iPad: led tv: ipod: ❗️Notice that iPad corrected to ipod, but not vice versa!  Why is that?
+
+prance:❗️Notice the stemmed term suggestion! Why is that?
+
+asdef: ❗️Notice phrase and term suggestions are different for a single token! Why is that?
+
+1945674: 
+
+Bonus: To evaluate spell checking in an actual application, we would want to capture how often spelling corrections are shown to searchers, how often searchers choose those corrections, and how often those choices lead to clicks or purchases. We would also want to estimate the rates of false negatives (i.e., failure to correct a misspelled query) and false positives (i.e., “correcting” a query that is already spelled correctly).
+
+Let’s do some of that here. All of the following queries are actual misspelled queries in the logs Seeing how many of them are corrected provides estimates of the true positive and false negative rates. A similar exercise with correctly spelled queries would provide estimates of the false positive and true negative rates. 
+
+16 gig ipd daul caeras
+
+2.5 laptop hardrive
+
+8 guage
+
+29 inchs tv
+
+asis u56
+
+adroid tablet
+
+aesus deskops
+
+7.1 reciever
+
+ac adaptervariabl
+
+apple computore
+
+acertablet 16g
+
+2-line corded tele phones
+
+altec lamsing
+
+16 gb micros sd pny
+
+3d night mare before christmas
+
+17 inch lap top case
+
+aple computer
+
+amd raedon
+
+aitport extreme
+
+57 nch lcd tv
+
+88 music key board
+
+androde tablets
+
+32 in rv samsung
+
+amp wirring kit
+
+6500 watt power acoustic amplifier
+
+3d bluray tv
+
+42 sony bravida
+
+air conditioner frigidare
+
+15 subwoffer
+
+360 wireless pc receiver conter
+
+1000watt amp
+
+7.1 surrond sound
+
+32gb micro sd carf
+
+3ds screen protecter
+
+64gb flashdrive
+
+after affects
+
+asis cm1730
+
+32 ich flat screen tv
+
+2 gb flashdrives
+
+61 panansonic
+
+90 led sansung tv
+
+10 inc dell notebook lap top
+
+acoustic electric giutar
+
+acer extenza ac adapter
+
+apple keboard
+
+47 l cd tv
+
+4 pin fire wire
+
+46 mistubishi tv
+
+alein ware
+
+6 1/2 car sperkers
+
+1tb hard dusk
+
++attlefield 3 pc
+
+2 gb scan disk memory card
+
+10 inch sub woofer
+
+7 inch talets
+
+
+Autocomplete
+
+Code solution provided in Slack.
+
+Appl:
+
+Apple i:
+
+Apple ip:
+
+Apple Mac:
+
+lcd: 
+
+asdef: 
+
+(no suggestions!)
+
+Bonus: Similar to spelling suggestions, we would capture how often suggestions were shown and how often they were chosen.  We would also capture what the rank of the suggestion was in the drop-down list (similar to search, presumably the closer to the top, the better) and how often the user engaged with the results after completing the chosen suggestion.
+
+Congratulations! You’ve completed Search Fundamentals!!
+
+

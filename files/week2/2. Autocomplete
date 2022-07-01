@@ -1,0 +1,81 @@
+Autocomplete
+Autocomplete
+Query Probability
+Not as Simple as it Looks
+Query Performance
+A Trade-Off
+Autocomplete vs Instant Search
+In the past decade, autocomplete has become a required feature for search engines. Today, searchers who type into a search box expect to see autocomplete suggestions; otherwise, they’ll conclude that the search engine is broken.
+
+
+Here is a sample image caption.
+
+
+Autocomplete isn’t just a way to help searchers type less. Autocomplete also helps searchers express their intent with a higher degree of likely success, since it is often built on prior user behavior that lead to successful searches.
+
+Query Probability
+Autocomplete predicts complete search queries from partial ones. We can model this process using conditional probability: Given a partial query, we want to offer searchers the most probable query that completes it.
+
+We can use historical query logs to compute the probability of a query based on how frequently it appears in the log. For example, if our log contains 1,000,000 queries and 1,000 of them are for “pants”, then the probability of “pants” is 1,000/1,000,000 = 0.001. We can also count how many of those queries led to a click or purchase if we want to weigh our analysis to favor queries that lead to engagement.
+
+That’s the a priori probability. As the searcher types in more characters, the conditional probability of a query either increases (because the denominator decreases) or goes to zero because the query doesn’t start with the entered prefix. Continuing with our example, if 50,000 of the 1,000,000 queries start with “pa”, then Pr(“pants”|”pa”)=1,000/50,000=0.02. But Pr(“pants”|”pat”)=0. Or does it? We’ll get back to that in a moment.
+
+Not as Simple as it Looks
+Computing probabilities this way is simple, but reality is a bit more complex. Here’s a taste of that complexity:
+
+Query frequency in the logs doesn’t take into account recency, seasonality, or other time-dependent factors. There are algorithmic and editorial strategies to emphasize recency or other time-dependent factors, but they all have trade-offs. There’s no one right approach.
+
+There are also non-temporal factors: We may want to build a regression model using features like location, gender, and session context. These approaches generally lead to more accurate probability estimates, but they also increase the risk of overfitting.
+
+The partial query may not be a prefix. For example, we shouldn’t assume Pr(“mens pants”|”pa”)=0 just because “pa” isn’t a prefix of “mens pants”. We should strongly prefer prefixes, but we should allow for exceptions.
+
+The partial query may be misspelled. For example, someone typing in “pat” may intend to type “pants”. To account for that, it’s necessary to combine autocomplete with spelling correction – a topic we’ll explore in the next section.
+
+You may want to exclude autocomplete suggestions from the logs when computing query probabilities, in order to avoid a positive feedback loop.
+
+Query Performance
+Query popularity tells us how often people express their intent through a particular search query. But it doesn’t tell us how often we manage to understand that intent and deliver a successful search experience.
+
+We can use clicks or actions (e.g., purchases in the context of a shopping site) as indicators of search success. We’ll save a deeper discussion of query performance for the Search with Machine Learning course, but for now let’s assume that clicks indicate successful searches.
+
+Then, instead of counting all the times a query appears in the log, we can count the queries that lead to clicks. In other words, we choose the autocomplete suggestions that maximize the conditional probability of a click, given the entered prefix.
+
+A Trade-Off
+We can think of the conditional probability of a click given a prefix as the product of two factors:
+
+The conditional probability of the query, given the prefix.
+
+The conditional probability of a click, given the query.
+
+
+
+Continuing our earlier example, if the query “pants” has a click-through rate (CTR) of 0.1, then the probability of a click for “pants” given the prefix “pa” is 0.02 * 0.1 = 0.002.
+
+Let’s add another query to our example: The query “pant cuffs” has only 100 occurrences in the log (a tenth of “pants”), but a CTR of 0.5. The probability of a click for “pant cuffs” given the prefix “pa” is 0.002 * 0.5 = 0.001.
+
+The probability of a click for “pants” given the prefix “pa” is double the probability of a click for “pant cuffs”. Yet there’s something disconcerting about favoring a query with a CTR of 0.1 over a query with a CTR of 0.5, just because the lower-performing query is much more popular.
+
+The risk of favoring low-performing popular queries is that we’ll lead the searcher to an unsuccessful experience. If we instead favor queries that perform better but are less popular, we may require searchers to type more, but we’re less likely to lead them astray.
+
+There’s no one answer on how to manage the trade-off between query popularity and performance. And hopefully the most popular queries do deliver reasonable query performance! Regardless, it’s probably a good idea to set a minimum threshold of query performance for autocomplete suggestions.
+
+It’s also good to keep in mind other factors when building your autocomplete implementation, such as:
+
+Speed: Autocomplete needs to be as fast, if not faster, than search, in order to be responsive to user typing.  Quantitative performance can be challenging, since autocomplete often significantly increases the load on your servers if you aren’t careful.  Autocomplete in most search engines also requires complex in-memory structures in order to perform well. Caching is your friend… most of the time.
+
+UI/UX: Autocomplete solutions these days often come with a mixture of UI/UX elements, including image preview, popular/related searches, context aware suggestions (e.g., filtered by the current user’s category/location), and “instant results” (e.g., a click on the item bypasses search all together).  Plan and experiment accordingly with your team in order to provide the best search experience possible for your users.
+
+Synonyms, Misspellings and Infix Matches: We’ll cover spelling in a moment, but there is a long-standing debate whether you should show misspelled words in autocomplete that knowingly yield better results.  Additionally, you may choose to forego the user’s prefix altogether and suggest synonyms or consider returning matches based on infixes instead of prefixes.  For instance, when searching user generated content, it is entirely possible that an incorrectly spelled term yields better results than the properly spelled version due to the fact that humans are bad at spelling! In the synonyms case, consider that Apple calls their laptops “portables” or “portable computers” instead of laptops.
+
+Editorialization: Like any part of the search experience, you can insert or suppress results as you see fit. Make sure whatever you build allows you to override system results where and how your business sees fit.
+
+To summarize, autocomplete isn’t just about helping searchers type less. It’s a way to guide searchers to successful search experiences. It’s easy to build a basic autocomplete system, but we’ve seen there’s a lot more to computing query probabilities and taking into account query performance. Building a robust autocomplete system can be a major endeavor.
+
+Remember that, for a large fraction of your searchers, autocomplete is the entire search experience. Invest accordingly.
+
+Autocomplete vs Instant Search
+Many people confuse autocomplete with instant search, also known as search-as-you-type. Instant search goes a step beyond autocomplete: Instead of suggesting search queries, it shows searchers actual search results as they type.
+
+Instant search works best for what information scientists call “known-item search” – The searcher has a single result in mind and can specify it precisely through a search query, such as a product name or document title.
+
+Instant search offers the prospect of nearly frictionless search. Bear in mind, however, that not every search is a known-item search. Instant search isn’t useful for exploratory search. Moreover, it can introduce complexity and distraction, and it competes with autocomplete for the searcher’s attention if the search application presents both autocomplete and instant search on the same interface surface. The search engine should only show instant search results when it is confident that the intended search query is a known-item search.  With that in mind, many sites actually do offer both instant search and autocomplete.  The key to success in this scenario is creating a good user experience that encourages users to engage.

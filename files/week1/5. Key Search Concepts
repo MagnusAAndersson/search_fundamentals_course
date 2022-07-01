@@ -1,0 +1,233 @@
+Key Search Concepts
+Across all search engines libraries, there are a few critical concepts that factor into building any search application which you need to understand and become proficient in. While some of these concepts may be hidden from you by the engine itself, it is in your best interest to understand how these concepts work and more importantly, why they are done. (We have tried to capture some common search terminology in the appendix of this document, so please refer to it if you are unsure of some of the meaning of terms used as we proceed).
+
+Overview
+From a broad perspective, most search engines have three key subsystems: an index subsystem to represent content for efficient search and aggregation, a query subsystem to retrieve and rank query results from the index, and an aggregation subsystem to produce summary statistics about the set of query results. You can see a generic overview of what this looks like in many engines in the diagram below.
+
+
+
+The following subsections will explain each of these key processes in more detail.
+
+Relevance
+Relevance is the prime directive of search: the guiding principle for a search engine is to return results that satisfy the searcher’s information need. Hence, a core function of a search engine is to determine which documents in the index are relevant to a user’s search query.
+
+Relevance is inherently subjective, since every user is unique, and two users performing the same query may not necessarily agree on which results are relevant. We can approximate relevance as objective using the “wisdom of the crowd”: that is, we measure whether a particular document is relevant to a particular query by averaging subjective judgments. This definition of relevance is binary: either a document is relevant, or it isn’t; but it’s also possible to define gradations of relevance using a similar crowdsourced model.
+
+Relevance is a key ingredient in ranking search results: after all, searchers want to see results that are relevant to their search queries. But ranking usually involves considerations beyond relevance, such as the popularity or recency of the results. Ranking may also take into account user-specific factors, such as the user’s location or preferences. Finally, search applications need to account for relevance even when they allow searchers to override the default ranking, e.g., sorting product results by price or sorting document results by recency.
+
+In practical terms, search engines take in a user query, retrieve results that match the query, and then rank results and present the top-ranked results to users. Hence, there are two main places where the search engine works to ensure relevance: retrieval and ranking.
+
+Retrieval transforms the raw search query into a representation of search intent and uses that representation to match a set of documents. Query understanding can help ensure that the representation accurately reflects the user’s intent. Ideally, the retrieved set is exactly the set of relevant results. In practice, there’s always a trade-off between precision (fraction of the retrieved results that are relevant) and recall (fraction of the relevant results that are retrieved).
+
+Ranking scores the retrieved results. The scoring function usually combines a variety of factors, which we can broadly distinguish as being query-dependent or query-independent. Query-dependent factors signal the relevance of a document to the query: for example, which query tokens match which document fields, whether a pair of consecutive query tokens occurs as the same phrase in the document, etc. Query-independent factors ignore the query, instead focusing on document features that signal value, such as popularity or recency. In general, the art of ranking is coming up with useful ranking factors and figuring out how to combine them.
+
+It’s important to remember that relevance is not just about query processing; it also depends heavily on indexing. Retrieval and ranking depend on the ability to efficiently access documents from the index based on their tokens and potentially additional signals as well. As a result, our treatment of relevance will move back and forth between indexing and querying.
+
+Indexing
+Fundamentals
+Indexing is the process of ingesting raw content and making it searchable. To do this, search engines create an inverted index, also known as a postings list. An inverted index maps tokens to the documents and specific fields containing those tokens. The basic data structure of an inverted index is a mapping of strings (the tokens) to sorted arrays of document ids.
+
+Let’s look at what an inverted index looks like for a toy collection of a few short documents:
+
+Document A: The quick red fox jumped over the lazy, brown dogs. Document B: Wearing all red, the Fox jumped out to a lead in the race over the Dog. Document C: All lead must be removed from the brown and red paint.
+
+Let’s assume that our analyzer converts all strings to lowercase and replaces punctuation with spaces, and that our tokenizer simply splits the document on spaces. Our inverted index would look like the following:
+
+Word	Occurrence
+brown	A, C
+dog	B
+dogs	A
+fox	A, B
+jumped	A, B
+lazy	A
+all	C
+lead	B, C
+out	B
+over	A
+paint	C
+quick	A
+race	B
+red	A, B, C
+removed	C
+wearing	B
+a	B
+and	C
+from	C
+the	A, B, C
+Note that the last few tokens (a, and, from, the) are often considered stop words – highly common words that can often be ignored without affecting the meaning of a search query or document. Some search applications remove these words in their analyzers, but you should be careful about throwing away information that might be useful.
+
+Even from this toy example, you can see how an inverted index is suited for keyword search:
+
+You could represent an inverted index as a hash table where the keys are the tokens and the values are the sorted arrays of document ids. As long as it fits in memory.
+Retrieving all the documents that contain a particular token (e.g. “quick”) is a constant-time lookup into the table.
+Retrieving all the documents that contain multiple tokens (e.g., “brown” AND “fox”) is efficient, because it’s computationally efficient to intersect two or more sorted arrays. It’s also efficient to perform an OR operation (e.g., “brown” OR “fox”) on sorted arrays.
+It is possible to compress an inverted index using techniques like run-length encoding, but this kind of low-level optimization is beyond the scope of this class.
+You can also see some of the challenges of using tokens as the main unit of meaning:
+
+There are separate entries for “dog” and “dogs”, since they are distinct tokens. But someone searching for “dog” probably wants to see documents containing “dogs” – and vice versa. We’ll address this when we talk about stemming and lemmatization.
+Similarly, synonyms – that is, two words with the same meaning like “short” and “brief” – will have distinct entries in an inverted index. Synonyms are a surprisingly complex topic that we will discuss later, mainly because they depend on context.
+Conversely, a word with multiple meanings, like “lead”, only gets one entry in the inverted index, unless we use a highly sophisticated analyzer to perform word-sense disambiguation – which raises other challenges.
+The words “Fox” and “Dog” are capitalized in document B, but the index – specifically, the analyzer, loses this information when it converts all tokens to lowercase.
+Also, it’s important to note that the inverted index does not tell us how to rank results. It just sorts documents by document id. It’s possible that the document id can serve as a query-independent ranking signal (e.g., if it indicates when the document was created), but in general the inverted index is designed for retrieval, not ranking.
+
+Some finer points about the information stored in an inverted index:
+
+A basic inverted index does not store positional information, e.g., information that could tell us that the word “red” comes before the word “fox” in Document A. This positional information is especially useful for phrase queries (e.g. “red fox”) requiring that two tokens be a contiguous phrase in the document. Positional information can be included in array elements much like field information. These augmented array elements are known as payloads. Payloads can carry rich information about how a token is associated with a document, beyond the fact of the document containing it, e.g., paragraph structure.
+We used a simple tokenizer, splitting on whitespace and punctuation. That works reasonably well for English – though there are still nuances around contractions, periods, and other times that punctuation shouldn’t be treated as a separator. But some languages, such as Chinese and Japanese, do not use whitespace to separate tokens. Tokenization is a critical building block, since it determines the tokens that are the main units for indexing and searching.
+There is no weighting information indicating how important a token is to a particular document. It is possible to represent weights using payloads, but we will explore more robust ways to use content understanding to improve document representations.
+Modern search engines have solutions, albeit not perfect ones, to address these and other challenges. Building an effective search application requires you to make decisions about the tradeoffs among these different solutions, based on the needs of your particular application. We especially encourage you to spend some time digging deeper into Apache Lucene, the comprehensive open-source platform that underpins OpenSearch, ElasticSearch and Solr.
+
+Some Documents and Fields are More Equal than Others
+As we mentioned in the earlier discussion of ranking, we can use query-independent factors to rank some results ahead of others. We often have prior knowledge to tell us that some documents in the index are more important than others. For example, Google computes a PageRank score that it uses to calculate the authoritativeness of a given web page. Retailers can use sales volume to compute each product’s popularity. While document importance varies by application, there’s usually some way to compute it, or at least a reasonable proxy for it. Once you have a measure of document importance, you can use it as a query-independent factor to boost important documents in search results that contain those documents.
+
+You can also assign differing importance to the various document fields. For example, the title of a document is more important than the description. Boosting results by field importance is a bit trickier than document importance, because it acts in a way that is query-dependent, e.g., a match on document title is boosted twice as much as a match on description. Still, field boosts are a simple, practical way to indicate which fields best summarize a document.
+
+Introducing document and field boosts is simple but creates its own complexities:
+
+Changing a document boost requires updating that document in the index. If document boosts change frequently (e.g., every time that product is sold), that can create a bottleneck that impacts the performance of your search application.
+Choosing boost values – even when they are based on data or formulas – is as much an art as a science, so be sure to test your settings both offline and through experiments.
+Field boosting is often a crude proxy for query understanding. For example, product type may be more important than brand, so it gets a higher field boost – but what really matters is whether the user is searching for a product type or a brand. Query understanding is more complicated, but it produces more robust search quality than field boosting.
+Beyond boosts, you can also represent measures of document importance directly as fields. In the example ecommerce dataset we are using, you will see that there are fields for popularity (“sales rank”), inventory, related products and commonly purchased accessories, all of which are derived from data. In general, think about what data you can join into the index to better represent the content.
+
+Some Tokens are More Equal than Others
+As discussed, a basic inverted index does not contain weighting information indicating how important a token is to a particular document.. It is possible to represent weights using payloads, but how do we determine those weights? We’ll discuss content understanding approaches later in the course, but for now we can describe a practical weighting method grounded in simple statistics.
+
+There are two principles we can use to weigh the importance of a token to a document:
+
+A token that is repeated in a document is more important to the document. We can measure this as term frequency (tf), optionally normalizing to the document length.
+A token that occurs in fewer documents in the index is more important to the documents in which it occurs. We can measure this as inverse document frequency (idf). More precisely, we use the inverse of the logarithm of the document frequency.
+Combining these two quantities gives us the popular tf-idf measure. There are many variations of tf*idf, but they are all based on the above two principles. There’s also a related family of BM25 measures that use a more sophisticated interpretation of these principles.
+
+This approach to term weighting is very simple and practical, but be careful about edge cases. Token repetition can be a content artifact that does not necessarily reflect importance. And unique tokens, such as proper names or misspelled words, have very high idf but don’t necessarily carry a corresponding share of document importance. Nonetheless, tf*idf is a simple token weighting approach that often works well enough in practice. We will discuss relevance and scoring in more detail in week 2.
+
+Analyzers
+As we saw above in our simple inverted index, we need to process content into tokens in order to make it searchable. We do so using an analyzer. It’s important that we use this same analyzer for queries, so that query text generates the same tokens we indexed.
+
+An analyzer typically performs the following steps:
+
+Character Filtering: character-level transformations that usually convert letters to lowercase, as well as removing or standardizing accents and other diacritics. For some languages, character filtering also includes Unicode normalization.
+Tokenization: converts a string of characters into a sequence of tokens, typically corresponding to words. The simplest tokenizers split on whitespace, but the handling of punctuation can be complex. Moreover, languages like Chinese and Japanese do not have spaces between words, so they require more sophisticated tokenization algorithms.
+Stemming: converts each token by chopping off its ending (what linguists call inflections) to obtain what should be the main essence of the word. For example, stemming converts both “apple” and “apples” to “appl”.
+You can visualize an analyzer as a pipeline of transformations that is applied during both indexing and query processing:
+
+
+
+We can see how an analyzer works by posting the following in the Dev Tools window of our OpenSearch dashboard:
+
+POST _analyze
+{
+  "analyzer": "simple",
+  "text": "The QUICK Brown-Foxes jumped over the lazy dog's bone."
+}
+The “simple” analyzer that ships with OpenSearch performs character filtering and tokenization to produce the following sequence of tokens:
+
+the, quick, brown, foxes, jumped, over, the, lazy, dog, s, bone
+The “simple” analyzer that ships with OpenSearch does not perform stemming. But we can see how a popular open-source stemming library called Snowball (developed by Martin Porter who is famous for the “Porter stemmer”) transforms text.
+
+As before, post the following in the Dev Tools window of our OpenSearch dashboard:
+
+POST _analyze
+{
+  "analyzer": "snowball",
+  "text": "The QUICK Brown-Foxes jumped over the lazy dog's bone."
+}
+It now produces the following sequence of tokens:
+
+quick, brown, fox, jump, over, lazi, dog, bone
+Note that this more sophisticated analyzer not only stems the tokens, but also removes stop words like “the”. You can learn more about Elasticsearch / OpenSearch analyzers here. Also, don’t be shocked that stemming produces non-words, such as stemming “lazy” to “lazi”. That’s fine – as long as you use the same analyzer for query processing as for the index!
+
+Note that analyzers produce more than just the sequence of tokens. They also populate metadata attributes like type, character index offsets, and token position (which is especially useful for phrase search). Note that nuances of tokenization, such as removing stop words, mean that token positions don’t necessarily form a consecutive sequence.
+
+Computational linguistics is a deep topic in its own right, and we’re just touching on it in our discussion of analyzers. Most search engines have tools to handle a wide variety of text across a number of different languages, character encodings and content formats. And while many search engines are configured to use sensible defaults, it is important that you, as a search engineer, make informed choices that optimize for your data and user needs. You’ll get a chance to do so in the week 1 project, when you set up field mappings for our example dataset.
+
+So far, we have built an inverted index and explored the basics of text analysis. Now let's look at how search engines find, score, and return results.
+
+Searching
+Given an index, let’s look at how search engines take a user’s query and then identify, score, and return a ranked list of results that are relevant to the user. Let’s start by articulating a few typical requirements for search applications:
+
+Users expect to be able to express their queries in simple, natural language. They may use simple query operators like quotation marks to denote exact phrases, but they aren’t going to use SQL or some other formal query language. Most users aren’t programmers.
+
+In most applications, users rarely look past the first page or few pages or results. Hence, we focus more on precision (fraction of the retrieved results that are relevant) than recall (fraction of the relevant results that are retrieved) – at least in the top-ranked results.
+
+Speed matters: users trained on Google generally expect search engines to deliver sub-second response times. While we will not explicitly focus on optimizing response times in this class, it’s important not to introduce complexity that significantly increases response time, even if it achieves marginal improvements in search quality.
+
+Communication matters: searchers should be able to determine from the search results page whether a particular result is likely to satisfy their information needs. We usually accomplish this by showing users snippets that summarize the results and highlight how each result matches the query.
+
+Earlier, we introduced retrieval and ranking. To refresh, retrieval transforms the raw search query into a representation of search intent and uses that representation to match a set of documents. Then ranking scores the retrieved results, using a scoring function that combines a variety of query-dependent and query-independent factors.
+
+Let’s start with retrieval. A simple approach is to find documents containing all the query tokens:
+
+Process the query using the analyzer to obtain a sequence of tokens.
+
+Look up each token in the inverted index to obtain its associated document id array.
+
+Return the documents whose ids are in the intersection of these arrays.
+
+This simple approach accomplishes retrieval, but it doesn’t help us with ranking. But we can now use a simple ranking function: score each of the retrieved results as the sum of the tf-idf scores of the matched tokens, and then rank the results by these scores.
+
+We now have a simple, if naive, way to perform retrieval and ranking. Let’s explore some more sophisticated approaches that we can take to improve search quality.
+
+Query Processing
+Our simple retrieval approach used an unspecified analyzer to obtain a sequence of tokens. As discussed earlier, there are a lot of options in choosing, configuring, or building an analyzer. But there’s also more to query processing than the analyzer. We’ll defer some of this discussion to later weeks, but here are some of the common steps used in query processing:
+
+Analyzer: as discussed above, the analyzer performs character filtering, tokenization, and possibly stemming.
+
+Segmentation / Entity Recognition: recognizing sequences of query tokens that should be treated as single, indivisible concepts, e.g., “new york”. These may be turned into phrase clauses to improve precision.
+
+Query Expansion: using stemming, synonyms, or other methods to expand tokens or segments. These are typically turned into OR clauses to increase recall, though they can sometimes be used to improve relevance through a technique known as blind or pseudo relevance feedback.
+
+Query Classification: using a table – or using machine learning techniques – to map the query to a subset of the index, often using a category taxonomy. This mapping is typically turned into an AND clause to improve precision.
+
+Spelling Correction: using a table or an algorithmic / machine learning approach to detect and correct misspelled queries. Spelling correction can occur at various points in query processing, depending on the approach used.
+
+The result of applying these and possibly other steps to the search query is typically a Boolean expression or an abstract syntax tree that can be used both to retrieve results from the index and to supply the ranking function with inputs for query-dependent factors.
+
+In addition, many search engines, including Lucene-based engines like OpenSearch, Elastic, and Solr, support explicit operators in the search query, also known as advanced search. These include Boolean operators (AND, OR), wildcards for substring search, regular expressions, etc. But using these operators tends to nullify query-dependent ranking factors that are designed to operate on simple, natural language queries. Lucene also supports explicit boosting of specific query tokens, but in general it is better to perform such operations inside the search application rather than exposing this control to end users.
+
+Common Search Operators
+Operator	Description
+AND/OR	Boolean operator that combines the two adjacent tokens by either requiring them both to be present or allowing one or the other to be present. Example: car OR plane
++/-	Require (+) or disallow (-) the token immediately to the right of the operator. Example: +car -plane
+:	Specify the field you want to search, overriding the engine’s default fields. Example: title:car AND subject:fast
+Phrase/Exact match using quotation marks (“)	All the tokens in the quotation marks must occur next to each other. Example: “fast car”
+Parentheses	Group tokens together for both readability and logical relations. Example: (fast OR quick) AND car
+Term/Clause boost	Tell the query engine that a particular term or clause has a higher or lower weight than non-boosted terms. Example: (fast^2.5 OR quick^0.75) AND car
+Ranking
+Once we have processed the query, we proceed to retrieve and rank results.
+
+A straightforward approach treats retrieval and ranking as completely separate processes. Retrieval uses the output of query processing – a Boolean expression or abstract syntax tree – to retrieve an unranked set of results from the inverted index using efficient set operations. Ranking then computes a score for all the retrieved results and sorts them by those scores.
+
+As discussed earlier, a simple ranking approach is to score each of the retrieved results as the sum of the tf-idf scores of the matched tokens, and then rank the results by these scores. The approach focuses entirely on relevance, using the tf-idf scores as query-dependent factors.
+
+But this ranking approach is too simple for most search applications. There’s a lot of room to improve on tf-idf – indeed, OpenSearch uses a more sophisticated variation of BM25 called BM25F, which recognizes that each document field can contribute differently to the score. We’ll cover this more in week 2. There are also opportunities to leverage query-independent factors, such as popularity, as well as query-dependent factors mined from user behavior, such as how often users who perform a query click on a particular result.
+
+Indeed, researchers and practitioners have spent decades studying ranking, to improve both search quality and computational efficiency. Modern, large-scale search applications use a multi-stage approach that may employ multiple indexes, knowledge graphs, caches, editorial decisions, and other data sources. Earlier stages focus on quickly narrowing down the results – indeed, they may use a simple function like tf-idf or BM25 to winnow the results – while later stages invest more computation on fewer results – and often a sophisticated machine learning model – to fine-tune the ranking of the results that make the initial cut. This process works because users rarely look past the first page or few pages or results, so what matters most is the quality of the top-ranked results. In week 2, we will explore this approach using a 3rd-party OpenSearch plugin for machine learned ranking, also known as learning to rank (LTR).
+
+Multi-stage approaches recognize that delivering both search quality and computational efficiency requires blurring the line between retrieval and ranking. In effect, we can think of ranking as a series of scoring functions from simplest and cheapest to most complex and expensive. In this framing, retrieval is itself a cheap binary scoring function, keeping the results it retrieves and removing the results it does not.
+
+Beyond this, there are various ways to improve computational efficiency. Many search engines maintain caches of results for frequent queries. The inverted index also provides opportunities for optimization, from choosing a sort order that is a meaningful query-independent ranking factor (like recency or popularity) to precomputing complex – and possibly machine-learned – functions that can be used in scoring. A more sophisticated use of precomputed statistics can allow the search engine to “early-terminate” scoring by knowing that no additional documents can outscore the ones already collected. And, as discussed earlier, the data structures for the inverted index can be compacted in various ways to reduce storage and data transfer costs.
+
+We’ll talk more about ranking in week 2, but here are a few things to keep in mind for now:
+
+For most engines, a score for a given document is specific to a given query and a given version of the index. In other words, scores are only useful for ranking a particular set of results and are not comparable across queries or different versions of the index.
+
+The analyzer for query processing needs to be identical to – or at least compatible with – the analyzer used for indexing. If you stemmed your documents and converted them to lowercase, you need to do the same to the query tokens. Exceptions to this occur when, for instance, an analyzer also outputs synonyms for a token, either at index time or query time, but usually not both. Even in this case, though, the tokens must still be lowercase and stemmed.
+
+You don’t have to use a single retrieval and ranking approach for all queries. For example, an AND of tokens might work well for short queries but not for long ones, where it might be better to relax the query to make one or more tokens optional – especially if the alternative is not returning results. Some search queries might not even be content searches, e.g., a search for “help” might be an attempt at site navigation.
+
+Remember that the search box is where users express themselves – and they express themselves in their own words, not a programming language. So try to empathize with users when you design a search application, rather than mindlessly interpreting the query as input to a particular retrieval and ranking approach.
+
+Aggregation and Facets
+So far, we’ve discussed retrieval and ranking with a focus on the quality of the top-ranked results. But sometimes it’s useful to focus less on ranking and more on the retrieved results as a set of results that we can count, analyze, and aggregate.
+
+Sometimes we’re directly interested in summary statistics of a result set. We may be interested in the number of results, or in the sum or average of some result attribute. These kinds of analytics are useful for powering dashboards, as we saw earlier in the flight data demo.
+
+Indeed, despite being known as search engines, Elastic and OpenSearch are quite popular for their analytic capabilities. They offer rich aggregation capabilities, including numerous statistical calculations, histograms, and even a scripting function that allows you to do your own math. Meanwhile, Apache Solr’s streaming expressions enable a search engine to serve as a NoSQL analytics engine.
+
+Aggregation makes use of the forward index we mentioned earlier but have not really explored until now. As a reminder, the forward index maps each document to some of its field values. In order for those values to be available for aggregation, they are usually stored in memory. Since memory is often a scarce resource, it’s important to be thoughtful in deciding which field values will be available for aggregation.
+
+A particularly interesting kind of aggregation is computing histograms of fields that searchers can use to refine their results. You’ve surely encountered these when searching on ecommerce sites – they are often used to populate refinement options – and counts – on the left-hand rail. This approach of using fields to populate refinement options is known as faceted search, and it emerged in the early 2000s – in large part because of the commercial Endeca search engine – as a popular, practical approach to help searchers navigate large result sets.
+
+Early faceted search systems focused on quickly providing counts over low-to-mid cardinality fields so that users could effectively filter down results. More modern applications take advantage of more complex aggregations, such as weighing document scores or learning from historical searcher demand.
+
+In general, aggregation provides a framework for summarizing the entire set of search results, which is highly useful for both populating dashboards and supporting search refinements.

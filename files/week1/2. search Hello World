@@ -1,0 +1,9 @@
+Search “Hello World”: 0 to search in less than 5 minutes
+
+
+Take a few moments and try it yourself by logging into your OpenSearch instance
+provided by the class and loading the flight data yourself (or try in your own environment by following the OpenSearch demo instructions).
+One of the things you may find most surprising about this demo is how visual it is
+as well as how most of it is powered by issuing queries to a search engine even though you as the end user
+likely didn’t actually type in any keywords into the search box. If you’ve never built or worked with a search engine before,
+this capability is at the heart of most modern search engines like Elasticsearch and Solr and is why they have become so popular as data stores.

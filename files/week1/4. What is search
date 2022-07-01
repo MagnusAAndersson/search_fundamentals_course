@@ -1,0 +1,139 @@
+What is Search?
+Search, also known as information retrieval, is the process of taking in a user query, usually in the form of free or “natural” text, and returning zero or more results that a system has ranked according to some notion of relevance. When most people think of search, they think of Google, a few keywords, and “ten blue links”, but as you saw just now in the “Hello World” demo above, search these days is so much more.
+
+Given the growth of data and the variety of content one regularly encounters, it is much more useful to think of search simply as a “ranking engine” or an “importance engine” for data. That is, search engines are really good at taking in a fuzzy notion of what a user is looking for and then finding, filtering, and ultimately ranking multi-structured (e.g. text, keywords, links, numbers, prices) content and returning it to users so that they can make a decision on next steps. After that initial data selection, modern search engines further excel in slicing and dicing the retrieved data for deeper analysis. This process is often called “faceting” or “aggregations” and usually involves summarizing or otherwise analyzing the data to provide users with different ways of interacting with it. For instance, on Amazon, result data is often turned into facets on the left side of the screen, as can be seen in this example search for TV:
+
+
+
+Search touches on several related areas of computer science – particularly natural language processing (NLP) and Machine Learning (ML). More broadly, search uses techniques from linguistics, data structures and algorithms, image processing, psychology, and user experience (UX) design. While this course will only discuss these areas superficially as they directly relate to search, we encourage you to explore those areas more deeply as you grow as a search engineer or data scientist. Not only will they help you build better search applications, but they are fascinating subjects in their own right!
+
+History of Search
+Today we take search for granted. People born in this century may not even be able to imagine that their parents grew up in a world without ubiquitous search engines. Or that there were search engines before there was an Internet or World Wide Web (WWW).
+
+Search has a rich history.
+
+In 1945, Vannevar Bush wrote an article called "As We May Think" in which he imagined a future in which people could access information using a "memex" that indexed all potentially useful content through "associative trails" modeled after the way the human brain organizes long-term memory.
+
+Bush was quite visionary in his approach. Over the next couple of decades, information retrieval emerged as a discipline, led by Gerard Salton, whose research group at Cornell built the first modern information retrieval system in the 1960s.
+
+The emergence of the World Wide Web in the 1990s teased the possibility of accessing all of the world's information in theory. But accessing this information in practice requires a way to find information relevant to your particular need. Not surprisingly, some of the earliest innovations on the Web were search engines -- companies like Lycos and AltaVista.
+
+It's easy to forget this history because of how much a single company changed search. Google started as a research project in the late 1990s and quickly became the world's dominant search engine. Key to its success were two innovations. The first was MapReduce, which scales the indexing process by distributing computation across servers. The second was PageRank, which used link analysis to determine the importance of a web page.
+
+Even Google has long evolved beyond these historical innovations. But the core problems of search are evident from its earliest history, and understanding those problems is critical if you want to work on search yourself.
+
+Especially because search isn't just web search.
+
+Search Use Cases
+Search engines show up in many different application types, many of which will feel familiar to you (e.g. ecommerce, web) and some which might surprise you (e.g. caching, geospatial, primary data store), but fundamentally, search is about users communicating their needs to a system and the system responding with content to satisfy those needs. That communication can take many forms, but in this course we are going to focus on the basics: searchers communicating their intent through words, and the system responding with an organized -- particularly ranked -- list of results.
+
+Here are the most common categories of use cases:
+
+🔍 Web
+For practically every topic you can imagine, there’s a website somewhere on the web dedicated to that topic. Web search is all about ranking and returning content from (almost) all of those websites and making it easy for everyday users to find content on whatever topic interests them. Examples of web search include: Google, DuckDuckGo, Bing, Baidu (China), Yandex (Russia), and Naver (South Korea). Web search is the most familiar search experience for nearly all users, so it tends to set expectations for all search engines -- whose executives often lament, rightly or wrongly, “why aren’t we as good as Google?”
+
+Web search requires scaling for millions of users and billions of web pages. Returning results for a single query often means choosing from vast numbers of relevant results, many of which may present conflicting or contradictory information (especially in contentious domains like politics and health). Web search also contends with an ever-evolving landscape of spam and abuse. All of these characteristics make web search a driver of innovation in machine learning and distributed computing.
+
+Queries for web search span all subjects and have a very long tail. Moreover, both the indexed content and queries vary over time and are affected by weather, current events, celebrities, etc. Web search is also leading the adoption of new search interfaces -- particularly voice search and natural language queries, especially “smart speaker” devices powered by Amazon Alexa and Google Assistant.
+
+
+
+Example of a web search
+
+💰 Ecommerce
+Second only to web search in volume, but even more significant in terms of money, ecommerce drives a huge amount of investment in search. After all, if users can’t find the products they want, then they can’t buy them. Ecommerce search converts shopping intent to purchases.
+
+Unlike web search, ecommerce is distributed across many companies, even if a few such as Amazon and Alibaba have outsized market share. Compared to the web, an ecommerce catalog is modest in size, perhaps numbering in the millions of products but certainly not billions. But the demands of scaling up to millions of users are similar, especially during peak traffic times like holidays and sales events. Moreover, because ecommerce is a highly competitive landscape, it’s critical that users find what they want in the first few results -- otherwise, it’s easy for them to abandon their search and shop on another site.
+
+Indeed, while web search tends to focus on clicks as a measure of success, retailers are far more interested in making money. So ecommerce search tends to focus on measures like conversion (i.e., purchases) and revenue.
+
+Unlike web search, retailers usually control the catalog against which users are searching -- and hopefully they don’t need to worry as much about spam and abuse, unless they are running an ecommerce marketplace like eBay. In general, this control allows retailers to make content more findable by structuring the content with categories and attributes. And on the query side, retailers benefit from using query understanding techniques to map queries to those categories and attributes. As we will see in this course, machine learning is especially useful for both content and query understanding.
+
+Typical ecommerce queries fall into a few categories, including specific product names (“iphone 12 silver case 64 gb”), category (“phones”), brand (“apple”), and queries unrelated to the product inventory (“return policy”).
+
+
+
+🏢 Enterprise
+While web search and ecommerce search are the most common forms of public-facing search, there’s another critical category: enterprise search. Enterprise search lives “behind the firewall” of an organization, making that organization’s proprietary content available to its employees or other stakeholders. This content typically includes email, productivity suites like Microsoft Office or Google Workplace, wikis, shared document repositories like Dropbox and Box, collaborative platforms like Slack and Microsoft Teams, etc. Enterprise search enables employees to do their jobs by providing access to the data and documents they need in order to be productive.
+
+In contrast to public-facing search, enterprise search tends to have more modest numbers of documents (it’s just one company’s document collection) and far lower numbers of users. Indeed, enterprise search has to integrate with security and access controls to ensure that only the people entitled to a document are able to access it. These aspects of enterprise search limit the extent to which it can benefit from machine learning -- content understanding can still be helpful, but the low traffic makes it hard to train ranking and query understanding models.
+
+Enterprise search queries have as much variety as enterprises themselves, but some of the typical use cases are searches for people (“jane doe in marketing”), departments (“accounting”), reports (“sales for november”), and policy documents (“expense form”).
+
+Most enterprise systems that store content provide some way to search that content. In addition, there are enterprise search vendors that crawl and integrate content from these repositories. Dropbox, Box, Google Workspace, Microsoft Sharepoint are all examples of enterprise search systems. In addition, there are vendors that work across these systems to provide a single enterprise search solution for the organization.
+
+🗺 Local
+Local search focuses on content whose primary attribute is its location -- typically addresses, businesses, and points of interests. These can vary in granularity from specific street addresses to cities, regions, or even countries. Local search is a key feature of mapping applications, like Google Maps and Apple Maps; and it’s also critical for business search applications like Yelp. The numbers of documents and users vary widely across these applications.
+
+The importance of location in local search means that most local search queries are anchored at a specific location, such as when a user is trying to find the nearest Starbucks. Local search queries treat distance from an anchor location as either a filter (e.g., no more than 10 miles away) or a ranking signal (favoring nearer results over farther ones).
+
+Beyond that, local search can benefit broadly from machine learning to improve ranking, query understanding, and content understanding.
+
+Typical local search queries tend to either name an address (“1600 pennsylvania ave”), a business (“taco bell”), a point of interest (“brooklyn bridge”), or a category (“pizza”). The anchor location can be explicit (“pizza near times square”) or implicit (“pizza” implies “pizza near me”).
+
+
+
+📑 Legal (eDiscovery)
+Legal search, often known as eDiscovery, tends to focus on finding all of the content in an organization relevant to a specific topic, usually in the context of a lawsuit. The “discovery” process allows one side to request all relevant information from the other side, which in turn creates a need to find that information.
+
+eDiscovery is different from most other forms of search in a number of key respects. While search tends to focus on finding some relevant content as quickly as possible, eDiscovery is more focused on finding all the relevant content, in the hope of discovering a “smoking gun” that decides the result of a lawsuit. There may be a lot of content (comparable to enterprise search), but there are very few users. Moreover, these are expert users who invest a lot of time (days or weeks) into an extended search process, where they expect to exert a high degree of control.
+
+As a result, eDiscovery search tools focus on supporting this long-term process, in contrast to typical search applications that focus more on short user sessions. Machine learning can still be useful, particularly for content understanding and for increasing recall (i.e., finding more results that are relevant), but the bespoke nature of eDiscovery limits what automation can achieve.
+
+📊 Machine-Generated Data
+All of the previous categories have focused on allowing people to search for content in human-created content. But much of the world’s content is machine-generated, and there can be a lot of value in making it searchable.
+
+Specifically companies tend to generate data from event logs that record everything from user engagement to system error messages. This data tends to be massive in volume and interesting mostly in aggregate (e.g., for detecting and analyzing spikes in user traffic). It populates reports and dashboards, and it can be critical for gathering insights or performing incident response. The focus tends to be on accessing recent data, especially for populating dashboards. And as with other kinds of search that have high volumes of content but low user traffic, machine learning is mostly useful for content understanding.
+
+Because machine-generated data is so different from other search categories, we won’t focus on it in this course. But that doesn’t diminish its importance. Indeed, two of the largest companies providing search technology, Elastic (the company behind Elasticsearch) and Splunk, focus primarily on machine-generated data.
+
+In the OpenSearch demo that we looked at earlier, there is an example search application over web event logs that you can try out.
+
+
+
+Common Components of a Search Application
+Most modern search applications share a set of common components designed to guide users to more effectively find what they are looking for, whether it’s via hints like spell correction or common UI designs for displaying results. While not exhaustive, the following are common components of most search applications and are terms you will often hear us throw around as part of class, so they are worth documenting 📝.
+
+Ingestion
+In order to make content searchable, the search engine first has to ingest it. Ingestion typically starts with either crawling (traversing linked content like websites) or connecting (via pre-built connectors via APIs) to the primary data store that needs to be searched. This ingestion process can be considered the “extract” phase of an ETL (Extract, Transform, Load) process. The “transform” and “load” phases are part of the core indexing process, converting the ingested raw content into the representation the search engine uses to make it searchable.
+
+We will cover indexing below under Key Search Concepts.
+
+Content ingestion could be a class unto itself and is outside the scope of this class, although we will use some tools and write some code that loads data for us. Content ingestion is something most end users will know nothing about and typically don’t interact with unless they are using a personal search engine that searches their local content (e.g. “Spotlight search” on the Mac)
+
+Search Box
+
+
+The search box is exactly what it sounds like: the place in your application where users are able to input search queries in the form of keywords, questions, or using a specially designed syntax. While not all search applications have a search box, most do. The search box is not only the place where searchers express their intent through queries, but it is also the place where the search engine provides guidance through auto-suggest and spellchecking / ”did you mean”, either because searchers don’t fully know how to express what they are looking for or because they don’t fully understand how search works in your application. Thus, the search box is a prime candidate for improving search and where you will spend a lot of your time helping users!
+
+Autocomplete
+
+
+Autocomplete (also called typeahead or autosuggest) is a very common feature that search engines expose through the search box to help users complete queries that they aren’t quite sure how to specify or simply to save them effort by not requiring them to type the entire query. Autocomplete suggestions are often sourced from prior user queries and can benefit from machine learning approaches that predict what a user might type.
+
+Spelling Correction
+
+
+Let’s face it, a lot of us are bad spellers. Estimates of the fraction of misspelled search queries vary, but a variety of studies place it between 10% and 15%. Fortunately, in many search systems, it’s possible to detect and correct misspelled queries based on a combination of dictionaries and analysis of query logs and index contents. Most search engines either automatically correct spelling errors or offer a “did you mean” suggestion. Historically, spelling correction has relied on a statistical approach known as the noisy channel model; but more modern spelling correction approaches employ machine learning to achieve better accuracy.
+
+Results
+
+
+The search engine results page (SERP) is where the search engine presents results to searchers, as well as where searchers can engage with those results. In many search applications, this SERP presents results with summaries -- often query-biased summaries (aka snippets) showing how each result matches the query by presenting the query keywords in context. The SERP has evolved a bit since the early days of showing “10 blue links”, becoming more visually rich and incorporating elements to better organize or communicate the content of the results. Still, the foundation tends to be a list or grid of mostly textual results. Since the SERP is the primary surface where searchers interact with search results, it is crucial to developing and evaluating models (hand tuned or machine learned) to improve search. Most models aim to optimize for engagement with results on the SERP. We will spend some time in week two on tuning ranking, but know that this is a rich area of research.
+
+Query Refinement and Faceting
+Search usually starts with entering words in a search box and the search engine returning a list of results, but it doesn’t necessarily end there. Sometimes searchers benefit from refining their initial search queries, especially broad or ambiguous queries that return large, heterogeneous result sets. Search applications often implement query refinement through faceted search, a technique initially popularized by Endeca (where Daniel was a founding employee) and Apache Solr (where Grant is a committer).
+
+Faceted search starts with faceted classification: a collection of independent attributes, called facets, to classify each document in the search index. This contrasts with using a single classification scheme, such as a list of categories or a hierarchical taxonomy. Having multiple independent attributes means that searchers can refine by the attributes that matter to them, in whatever order they prefer. When a searcher selects a facet value -- that is, an attribute-value pair -- the search engine treats that value as a constraint and filters the results accordingly.
+
+On an ecommerce site, facets typically include product type, brand, size, color, etc. In an enterprise setting, facets might include document type (e.g. PDF), topic, author, etc.
+
+Associating documents with facet values is a key part of the ingestion process. The facets might be directly available from the raw input, or they may require additional processing. Indeed, a key application of machine learning to content understanding is inferring documents’ facet values.
+
+A key decision in designing the search experience is deciding which facets and facet values to show for a given search. There are usually too many of each to show them all. A common strategy is to favor facets with high coverage (i.e., most results have a value for that facet) and then to favor facets with the highest counts in the search results -- and certainly not to offer query refinements that would lead to no results. More sophisticated approaches use query logs and machine learning to determine which facets and values are most likely to serve user needs.
+
+
+
+We can also think of facets as a way to summarize or aggregate the search results, converting the results into histograms of facet values. Many search engines offer more sophisticated aggregation capabilities that not only count attributes, but can also perform complex mathematical expressions to compute averages, analyze geo-spatial or network distances, etc.
+
+In this screenshot from eBay above, you can see a number of different facets in play. On the left side, you have hierarchical faceting on Category (or at least it could be, not all sites implement taxonomy via faceting, but they could!) as well as keyword based faceting on Suspension Type, likely for top of the fold viewing due to it being one of the main criteria for buying a mountain bike. Across the top of the search results, you can see range facets for price and keyword facets for suspension type and wheel size. One could imagine other facets might include things like manufacturer, ratings and whether free shipping is available, but they aren’t shown here.

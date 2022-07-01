@@ -1,0 +1,2707 @@
+Welcome to week 2!  At this point in the course, you have already built a working, albeit simple, search engine with two indexes, one for our product catalog and one for our query logs.  You also now have a baseline understanding of how to load, search, and aggregate data. Congratulations! At this point, you may be wondering what else there is to building a search application. You’re about to find out!
+
+This week, we are going to focus on the most critical elements of a search application. First, we are going to be more rigorous about what relevance means, and we will develop a better intuition for how search engines like OpenSearch score and rank content. We will discuss how to measure relevance – the prerequisite for our next step, which is how to improve it. We will also highlight some common traps people encounter while trying to optimize relevance. Then, we will dive into query autocomplete and spelling correction. These are all key parts of the search experience. In this week’s project, you’ll put all of this together to improve the search application you started developing last week.
+
+Reminder: if you have any questions, please post them in our Slack channel! If you’re confused by something, you are probably not the only one. We are here to help!
+
+Relevance and Ranking
+Hello World, Relevance Edition
+In week 1, we got a taste of relevance and ranking through a few different means.  We saw how varying the analyzer could dramatically impact retrieval. We also explored term-weighting approaches for ranking, such as tf-idf and BM25. This week, we’ll dig into more sophisticated approaches to these challenges, as well as discuss the nuances that distinguish relevance from ranking.
+
+Before we can improve relevance, however, we need a better understanding of how to measure it. We’ll start by getting to know our query logs and making some relevance judgments.
+
+For this, we’ll need both the “bbuy_products” and “bbuy_queries” indices, as well as the Dev Tools UI. If you don’t have these available and need a reminder of how to set these up, please refer to the  README and to the week 1 project (for indexing the data and running the Flask application).  Confirm that your indices have all of the documents indexed as well, per the “Project Assessment” section in week 1. If you would like to use the instructor’s version, the “week2” directory has a baseline of our version for product indexing. For queries, you should use what’s in week 1 for index_queries.py. (Note, in week 2, we are changing how query indexing works, so the following is not possible with the week 2 query indexing code).
+
+In the Dev Tools UI, issue the following aggregation to get the top 10 most issued queries in the logs (see hello_world_relevance_edition.dev):
+
+
+GET /bbuy_queries/_search
+{
+  "size": 0,
+  "aggs": {
+    "Query": {
+      "terms": {
+        "size": 10, 
+        "field": "query.keyword"
+      },
+      "aggs":{
+        "Docs":{
+          "terms":{
+            "size": 5,
+            "field": "sku.keyword"
+          }
+        }
+      }
+    }
+  }
+}
+
+Your results should look like:
+
+
+{
+  "took" : 250,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 1,
+    "successful" : 1,
+    "skipped" : 0,
+    "failed" : 0
+
+  },
+
+  "hits" : {
+
+    "total" : {
+
+      "value" : 10000,
+
+      "relation" : "gte"
+
+    },
+
+    "max_score" : null,
+
+    "hits" : [ ]
+
+  },
+
+  "aggregations" : {
+
+    "Query" : {
+
+      "doc_count_error_upper_bound" : 0,
+
+      "sum_other_doc_count" : 1797068,
+
+      "buckets" : [
+
+        {
+
+          "key" : "lcd tv",
+
+          "doc_count" : 16522,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 1321,
+
+            "buckets" : [
+
+              {
+
+                "key" : "2620821",
+
+                "doc_count" : 7169
+
+              },
+
+              {
+
+                "key" : "2138389",
+
+                "doc_count" : 3575
+
+              },
+
+              {
+
+                "key" : "2893174",
+
+                "doc_count" : 2610
+
+              },
+
+              {
+
+                "key" : "1831054",
+
+                "doc_count" : 1260
+
+              },
+
+              {
+
+                "key" : "2047641",
+
+                "doc_count" : 587
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "2622037 2127204 2127213 2121716 2138291",
+
+          "doc_count" : 8531,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 6365,
+
+            "buckets" : [
+
+              {
+
+                "key" : "2138291",
+
+                "doc_count" : 654
+
+              },
+
+              {
+
+                "key" : "2622037",
+
+                "doc_count" : 475
+
+              },
+
+              {
+
+                "key" : "2127213",
+
+                "doc_count" : 432
+
+              },
+
+              {
+
+                "key" : "2127204",
+
+                "doc_count" : 354
+
+              },
+
+              {
+
+                "key" : "2121716",
+
+                "doc_count" : 251
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "Hp touchpad",
+
+          "doc_count" : 7390,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 524,
+
+            "buckets" : [
+
+              {
+
+                "key" : "2842056",
+
+                "doc_count" : 4196
+
+              },
+
+              {
+
+                "key" : "2842092",
+
+                "doc_count" : 2403
+
+              },
+
+              {
+
+                "key" : "2947041",
+
+                "doc_count" : 113
+
+              },
+
+              {
+
+                "key" : "2884119",
+
+                "doc_count" : 85
+
+              },
+
+              {
+
+                "key" : "2884085",
+
+                "doc_count" : 69
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "iPad",
+
+          "doc_count" : 5803,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 2242,
+
+            "buckets" : [
+
+              {
+
+                "key" : "1945531",
+
+                "doc_count" : 2141
+
+              },
+
+              {
+
+                "key" : "2339322",
+
+                "doc_count" : 489
+
+              },
+
+              {
+
+                "key" : "1945595",
+
+                "doc_count" : 457
+
+              },
+
+              {
+
+                "key" : "2842056",
+
+                "doc_count" : 284
+
+              },
+
+              {
+
+                "key" : "2339386",
+
+                "doc_count" : 190
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "hp touchpad",
+
+          "doc_count" : 5615,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 432,
+
+            "buckets" : [
+
+              {
+
+                "key" : "2842056",
+
+                "doc_count" : 3113
+
+              },
+
+              {
+
+                "key" : "2842092",
+
+                "doc_count" : 1792
+
+              },
+
+              {
+
+                "key" : "2947041",
+
+                "doc_count" : 122
+
+              },
+
+              {
+
+                "key" : "2884119",
+
+                "doc_count" : 88
+
+              },
+
+              {
+
+                "key" : "2884085",
+
+                "doc_count" : 68
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "iPhone 4s",
+
+          "doc_count" : 5400,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 2410,
+
+            "buckets" : [
+
+              {
+
+                "key" : "3487648",
+
+                "doc_count" : 1022
+
+              },
+
+              {
+
+                "key" : "3487784",
+
+                "doc_count" : 977
+
+              },
+
+              {
+
+                "key" : "3487675",
+
+                "doc_count" : 339
+
+              },
+
+              {
+
+                "key" : "3487693",
+
+                "doc_count" : 336
+
+              },
+
+              {
+
+                "key" : "3566966",
+
+                "doc_count" : 316
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "ipad",
+
+          "doc_count" : 5036,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 1980,
+
+            "buckets" : [
+
+              {
+
+                "key" : "1945531",
+
+                "doc_count" : 1899
+
+              },
+
+              {
+
+                "key" : "1945595",
+
+                "doc_count" : 404
+
+              },
+
+              {
+
+                "key" : "2339322",
+
+                "doc_count" : 397
+
+              },
+
+              {
+
+                "key" : "2842056",
+
+                "doc_count" : 214
+
+              },
+
+              {
+
+                "key" : "2408224",
+
+                "doc_count" : 142
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "Beats",
+
+          "doc_count" : 4805,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 2402,
+
+            "buckets" : [
+
+              {
+
+                "key" : "9836718",
+
+                "doc_count" : 811
+
+              },
+
+              {
+
+                "key" : "9492426",
+
+                "doc_count" : 663
+
+              },
+
+              {
+
+                "key" : "1232474",
+
+                "doc_count" : 409
+
+              },
+
+              {
+
+                "key" : "8913606",
+
+                "doc_count" : 274
+
+              },
+
+              {
+
+                "key" : "9492408",
+
+                "doc_count" : 246
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "Touchpad",
+
+          "doc_count" : 4668,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 269,
+
+            "buckets" : [
+
+              {
+
+                "key" : "2842056",
+
+                "doc_count" : 2718
+
+              },
+
+              {
+
+                "key" : "2842092",
+
+                "doc_count" : 1483
+
+              },
+
+              {
+
+                "key" : "2884119",
+
+                "doc_count" : 81
+
+              },
+
+              {
+
+                "key" : "2947041",
+
+                "doc_count" : 79
+
+              },
+
+              {
+
+                "key" : "2884085",
+
+                "doc_count" : 38
+
+              }
+
+            ]
+
+          }
+
+        },
+
+        {
+
+          "key" : "LaborDay_Computers_20110902",
+
+          "doc_count" : 4428,
+
+          "Docs" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 2540,
+
+            "buckets" : [
+
+              {
+
+                "key" : "1623912",
+
+                "doc_count" : 1419
+
+              },
+
+              {
+
+                "key" : "3031648",
+
+                "doc_count" : 133
+
+              },
+
+              {
+
+                "key" : "1415148",
+
+                "doc_count" : 118
+
+              },
+
+              {
+
+                "key" : "2845071",
+
+                "doc_count" : 115
+
+              },
+
+              {
+
+                "key" : "9873408",
+
+                "doc_count" : 103
+
+              }
+
+            ]
+
+          }
+
+        }
+
+      ]
+
+    }
+
+  }
+
+}
+
+
+👀 Let’s make a few observations about these results:
+
+This data is from 2011, when the iPhone 4 was state of the art. We would have loved to provide more current data, but it’s hard to find publicly available ecommerce data sets that include both a product catalog and query logs.
+
+We have not performed any normalization on the queries: “Hp touchpad” and “hp touchpad” are distinct queries, as are “iPad” and “ipad”. In general, we want to use an analyzer to normalize queries, but sometimes it’s useful to see the raw queries. For example, we can explore whether users are typing their search queries (probably in lowercase without punctuation) or copying and pasting them from product titles on other sites (which probably show up in title case and often include punctuation).
+
+There are some strange-looking queries! It’s unlikely that thousands of users typed “LaborDay_Computers_20110902” into the search box. The more likely explanation is that the search application generated this query automatically – Perhaps the users clicked on a promotional banner.
+
+We’re performing a nested aggregation, something we didn’t cover last week. The outer aggregation is on the query field, grouping searches by query, while the inner aggregation groups each of these buckets by SKU. As a result, we see the top-clicked SKUs for each query. This is a useful approach for getting a high-level view of searcher behavior.
+
+Perhaps the strangest query in the list is “2622037 2127204 2127213 2121716 2138291.”  Is it spam? Let’s investigate by searching the queries for this text:
+
+
+
+GET /bbuy_queries/_search?q=query.keyword:"2622037 2127204 2127213 2121716 2138291"
+
+
+Partial results look like:
+
+
+Here is a sample image caption.
+
+
+It looks like those numbers may be SKUs, at least from casual inspection of the “sku” and “query” fields. Let’s try searching for one of these numbers in the “sku” field of the product catalog:
+
+GET /bbuy_products/_search?q=sku:2622037
+
+Running this should yield a single document with a productId of “1218341074520”.
+
+So, what have we learned from this investigation? We can’t be sure of the source of these queries, but we can make some reasonable guesses:
+
+They could be test queries. It’s a common part of testing / quality assurance to make sure that search queries return expected results. That said, it’s a good idea to keep testing queries out of any logs that you use for analytics, especially when the data is being used to train machine learning models.
+
+They could be queries automatically generated by the application, like the previously cited “LaborDay_Computers_20110902” query. Again, you’ll want to isolate queries like these from analytics and training data.
+
+The queries could be coming from a crawler or bot. You’ll certainly want to detect these queries, as well, since they will wreak havoc on your analytics (crawlers and bots don’t buy much). You might even want to invest in blocking them, but that’s out of scope for this course.
+
+
+
+Note: If the query were for a single SKU – and not issued thousands of times, it would be quite plausible that a real user entered it into the search box. But it’s highly unlikely that so many users would issue the same long query consisting of five seven-digit SKUs. 
+
+Why did we go through this exercise? Mostly to remind you how important it is to actually look at your query logs! Analytics and averages often hide dirty secrets, and the only way to discover them is by rolling up your sleeves and looking at more granular data.
+
+Now that we have an idea of what’s in our query logs, let’s turn to relevance judgments. The following exercise should take you about half an hour:
+
+Start the Flask App, but this time for week2, by following the instructions in the README.
+
+❗️Important: You must run week2, not week1. We have made some changes to how queries are generated, imported some new Python dependencies, and added a few new UI elements.  You will be using week2 for the project this week, as well.
+
+Open the Flask App in your browser (e.g., https://3000-<GITPOD URL>.gitpod.io/search/query) so that you can perform searches against the product catalog.  To take notes, open a notepad, spreadsheet, or other app.
+
+In the search box of your application, issue each of the following queries:
+
+lcd tv
+
+ipad
+
+Touchpad
+
+Beats
+
+For each of the above queries, write down the following in your notes:
+
+The query.
+
+A sentence or two summarizing what you think the searcher is looking for. For example, if the query is “Beats”, that summary might be “Beats by Dr. Dre headphones” or “Over the ear headphones by Dr. Dre”.
+
+For each of the query’s top 10 search results, write down:
+
+The Product Id and Name
+
+“Relevant” if you think this result reasonably satisfies the searcher’s intent; “Not Relevant” if it does not.
+
+Whether this result is in the list of SKUs that are most clicked on for that query, based on our previous query log aggregation.
+
+The position of the first (top-most) result you judged as relevant, if there is one.
+
+When you’re done, post your findings in the #questions channel on Slack and then comment on 1 or 2 of your classmates’ posts:
+
+Where did you agree and disagree on your relevance judgments? Why?
+
+What fraction of the results did you each return as relevant for each of the four queries?
+
+What were the ranks of the first relevant results?
+
+How does the search engine’s performance compare to your expectations?
+
+What kinds of mistakes did the search engine make? Do you know why?
+
+How do your results compare to the top results from the aggregated query logs?
+
+We should note that there are many ways to make relevance judgments. We decided to take the simplest possible approach: binary judgments of “relevant” and “not relevant”. But many people use graded relevance (e.g., a scale of 3, 4, or 5 grades of relevance). Judges can also have the option of expressing their own confidence in the judgments, or at least answering “not sure”. Different approaches have their pros and cons, but binary judgments are certainly the simplest.
+
+Also, as a historical note: it’s interesting that “HP touchpad”, a product that never caught on, was one of our top queries. Curious why? Spoiler: price changes and discontinuations can affect buyer behavior. Keep that in mind when you look at query logs and user behavior generally, especially when your logs come from a short time range.
+
+Congratulations! 🎉 You've taken your first step toward embracing a scientific approach for measuring relevance. Collecting explicit relevance judgments and analyzing them is at the heart of all serious work for measuring and improving relevance. Now, armed with a way to measure relevance at the result level, you’re ready to explore how to aggregate those judgments into a measure of search engine performance and to improve that performance. Let’s do it!
+
+Measuring Relevance
+We just went through an exercise of collecting relevance judgments. Now, let’s try a more rigorous approach.
+
+Defining relevance is hard. Any attempt to define it feels like it comes down to “I know it when I see it”. Indeed, that’s essentially the approach we used earlier to collect relevance judgments.
+
+Information scientists (at least on Wikipedia) define relevance as a measure of “how well a retrieved document or set of documents meets the information need of the user”. This definition seems reasonable, but it doesn’t offer us a direct way to measure relevance. After all, we don’t have a way of reliably knowing users’ information needs – If we did, then we’d always return relevant results!
+
+Instead, we can follow one of two paths. The first is to try to put ourselves – or other people willing to do the work for us –  in the minds of searchers and make their judgments. That’s the approach we explored earlier. The other is to infer users’ information needs from their behavior, such as which results they engage with. Neither of these approaches is perfect, and each has its pros and cons. But, since we can’t read users’ minds to discover their true needs, we need to work with proxies.
+
+Regardless of whether we use human judgments or behavior, we need to recognize that we’re working with statistics. Every judge and user – and engineer and executive – will have their own opinion as to what is relevant. We don’t want to make decisions based on one person’s opinion, not even the highest paid person's opinion. Instead, we want to make decisions based on data, which in our case will mean examining judgments or behavioral metrics collected at scale.
+
+Collecting Judgments
+In search, as in other machine learning and NLP tasks, we require formal evaluation methods. In particular, we need a way to collect judgments at a greater scale compared to the approach we used earlier in our “Hello World, Relevance Edition” section.
+
+There are two main ways to collect judgments:
+
+Explicit human judgments. The most straightforward way to assemble a collection of training data is for human beings – yourself, your co-workers, or a contracted crowd (e.g., through platforms like Appen or Mechanical Turk) – to manually assign labels to a representative sample of the content you want to classify.  This can be as simple as tracking in a spreadsheet, and as sophisticated as using a purpose built application.
+
+Implicit behavioral judgments. Collecting explicit human judgments has two downsides: It’s expensive (in time and money), and it requires the human judges to be able to put themselves in the position of users. An alternative is to mine user behavior (e.g., collect click data) to acquire implicit human judgments. This approach has the advantage of being low cost, and the judges are in fact the users. But it suffers from presentation bias, since users can only engage with the content presented to them. Also, it conflates relevance with desirability and other factors: Users may decide to skip relevant results, and they may even decide to click on irrelevant results, simply out of curiosity.
+
+Both approaches have value, and ideally you should use a mixture of both. How much you decide to invest in each will depend on your resources, particularly staffing and budget, as well as potential impact. But it’s important to prioritize evaluation of relevance, in particular, and evaluation in general. Evaluation may not feel as fulfilling as shipping new code or features, but it’s the only way you’ll know that your development investments are actually helping users and delivering business value.
+
+What to collect in your logs
+A prerequisite for any evaluation approach is good tracking. Make sure to design your search application to track the following information for each search query:
+
+Query: What the user typed into the search box, and ​​what the application sent to the search engine.
+
+Parameters: Any categories, facets, or other filters, as well as user-specified sort.
+
+Session: Timestamp, session id, referrer URL, etc.
+
+User: ID if user is logged in, IP address, device, browser, etc.
+
+Results: IDs and titles of all displayed results (with positions), pagination or scrolling information, and summary information like number of results and facet counts. In short, log everything that might influence a user to pick a search result.
+
+Engagement: Which results the user clicked on or had further engagement with, like a purchase.
+
+System: Index version, names and versions of ML models, A/B treatments, etc.
+
+
+
+If your search engine performs spelling correction (and it should!), then also make sure to track the original query and spelling suggestions – including whether those suggestions were automatically applied or just suggested to the user as a “did you mean?”.
+
+If your search engine provides type ahead / auto-complete functionality (and again it should!), then be sure to track both the characters the users typed and the selected completion.
+
+Key Metrics
+Given a collection of representative query-level judgments – either explicit human judgments or implicit judgments from user behavior – we can then calculate some key metrics:
+
+Precision (P): The fraction of retrieved results that are relevant. We generally focus on the top-ranked results that the user sees, so we might measure the precision of the top 10 results, denoted P@10. It’s also common to use position-weighted measures like average precision, which give more weight to the top-ranked results. Note that this measure works best with explicit human judgments, especially since a lot of relevant results don’t receive clicks or other engagement. When you are looking at behavior, it makes more sense to look at click-through rate (CTR) or the mean reciprocal rank of clicks (see below).
+
+Recall (R): The fraction of relevant documents that were retrieved. Unfortunately, this is a somewhat theoretical metric, since we rarely know how many relevant results are in the index. We can estimate recall using a combination of sampling and judgments, but we usually can’t measure recall explicitly. We need to keep in mind, however, that tuning search is a precision-recall tradeoff: Efforts to improve one generally come at the expense of the other.  Recall matters most in areas like research and eDiscovery, where the cost of missing a relevant result is much higher than the cost of slogging through an irrelevant result. In contrast, most consumer applications, like ecommerce, focus on precision.
+
+Mean Reciprocal Rank (MRR): For each query, take the reciprocal (the reciprocal of x is 1/x) of the position of the first relevant or clicked document and then take the mean (i.e., average by dividing the sum by the count) across all queries to arrive at the mean reciprocal rank. MRR works well for both explicit or implicit judgments: With explicit judgments, it directly measures precision, while with implicit judgments, it conflates precision with other factors that affect user behavior. Keep in mind that you also have to decide what to do with queries that have no relevant or clicked documents. In those situations, you have two choices. The first is to exclude them, which is simple but may give you an artificially rosy picture of relevance. The second is to treat their positions as infinity, the reciprocal of which is zero. We recommend this second approach unless you are careful to separately track queries that have no relevant results or clicks – You don’t want to celebrate improving MRR when you’re doing so by removing clicks! MRR is especially suited for searches where there is a single right answer, such as a known-item search.
+
+Discounted Cumulative Gain (DCG): A position-weighted way to measure result set quality, allowing for graded relevance. DCG rewards highly relevant results appearing at the top of the list. It is more sensitive than the above metrics, but it is also more complex. Although it is designed for explicit graded human judgments, it can also be used with implicit judgments if grades are based on behavior (e.g., a conversion is 10 times as good as a click). DCG and its normalized variant NDCG are popular with companies whose revenue is highly sensitive to small changes in search quality.
+
+With all of these sophisticated mathematical measurements, let’s not forget simple metrics! In particular, you should make sure to measure how often the search engine returns no results. There may be good reasons for it – after all, it’s better to forthrightly show nothing than to confidently show garbage – but in general, showing no results means something went wrong. At the very least, you should be finding out if there is some way to satisfy those users’ needs, or at least to offer them something that is better than nothing.
+
+Simple Things to Do Now
+As you have probably figured out by now, measuring relevance properly can require a lot of work and cost a lot of money, especially if you need to pay for judgments. That’s fine for trillion-dollar companies like Google and Amazon, but what should the rest of us do?
+
+Even if you are on a shoestring budget, you can and should still make at least a minimal investment in measuring relevance, and not just to convince your CXOs that search isn’t “broken” because their pet queries don’t return the results they want.
+
+Search should be data-informed. Here are two things to get you started:
+
+Make sure you are collecting behavioral data for implicit judgments.  Most of these are likely free from the analytics work your application does anyway, but you may need to add in some search specific concepts. In particular, don’t just log clicks on search results – Log all the results shown to the user. Otherwise, you won’t get any negative examples that could give you insight beyond the clickthrough rate. If logging that much data strains your storage or other computational resources, then log a representative random sample of sessions or users – as large a sample as your resources practically allow.
+
+Establish an ongoing query triage process. On a regular cadence (such as monthly), as well as when you make any major changes or notice any sudden changes in business metrics,  have your team each judge the results for the 50 most frequent queries, as well as for a random sample of less frequent queries. Calculate key metrics like precision and MRR, and keep those in a spreadsheet or dashboard. Also pay attention to the agreement among your judges – if folks don’t agree on what is relevant, you may need to align the team to make sure you’re all moving in the same direction. Encourage individual engineers to perform this same exercise on a smaller scale as part of their development process. It's better to find out sooner than later (and in dev rather than prod!) how a change affects metrics.
+
+
+
+If your organization depends on search for revenue, then improving relevance is one of your highest-leverage activities. And, cliché as it may be, you have to measure something to improve it, so you can’t afford to not invest in measuring relevance.
+
+Still, as with all investments, you have to be wary of diminishing returns. Paying for ten times as many judgments is not going to give you ten times as much value. In fact, if you have to get a huge amount of data to establish statistical significance, it’s likely that you are overinvesting in pursuit of a low impact. So do something, but don’t go overboard!
+
+Finally, OpenSearch has some built in ranking evaluation tools that can help calculate precision, MRR, and DCG for you. We won’t use them in this class, but you should always see what tools your search platform provides to you out of the box.
+
+Now that we’ve learned how to measure relevance, let’s talk about improving it! Here, we’ll switch our focus to result scoring.
+
+Vectors and Token Weights
+In week 1, we focused mostly on retrieval rather than ranking. We did bring up token-weighting approaches like tf-idf and BM25, but we didn’t dig very deep. Let’s go back to them now, to understand the mathematical intuition behind token-weighting approaches. Don’t worry, we will go light on the formulas and do our best to communicate this intuition visually. And, as always, don’t hesitate to post any questions on Slack!
+
+Let’s dive right in, and start at the heart of what we’re trying to accomplish in relevance – measuring the similarity between queries and documents, so we can return the documents that are closest to the query. Similarity and closeness are fuzzy concepts when we discuss text, but we can give them concrete meanings when we think in terms of physical space. By representing queries and documents in a physical space, we can apply a bit of math to take care of the rest.
+
+Hopefully you’re familiar with physical spaces that have 2 or 3 dimensions, since those correspond to the flat world of paper and the world we interact with, respectively.. Measuring the distance between two points in these spaces is as simple as using a ruler.
+
+We’re going to use a slightly different measure, based on angles. We’re not really concerned with exactly where the points are, but we care about their direction from the origin. So in 2 dimensions, we can think of points being on a unit circle (a circle where all the points are exactly distance 1 from the origin), or in 3 dimensions on the unit sphere. To measure the similarity of two points, we can draw lines connecting the origin to each of the two points and measure the angle between the two lines. That angle will be somewhere between 0 degrees, if the lines point in the same direction, and 180 degrees if the lines point in opposite directions, with 90 degrees if they are at right angles.
+
+Degrees aren’t easy to work with directly, so we’ll use the cosine of the angle, which is equal to 1 at 0 degrees (same direction), -1 at 180 degrees (opposite direction), and 0 at 90 degrees (right angle). The closer the cosine is to 1, the more similar the two points, which we’ll call vectors.
+
+
+Here is a sample image caption.
+Now, here’s where things get a little more complicated. We’re not going to stay in 2 or 3 dimensions. Instead, we’re going to work in a space that has hundreds or thousands of dimensions! Where do those dimensions come from? The words in documents and queries.
+
+We can think of language as a space – we’ll call it a vector space – with thousands of dimensions, one for each word. To represent a document or query in this space, we create a vector (which is just like a point) whose coordinates are 1 for each word it contains and 0 for all other words. Since most of the coordinates are 0s, these are sparse vectors.
+
+Let’s look at the three simple documents from our week 1 exercise. We can represent them as vectors like this:
+
+
+
+        brown | dog | dogs | fox | jumped | lazy | lead | out | over | paint | quick | race | red | removed | wearing
+Doc A    1    |     |  1   |  1  |   1    |  1   |      |     |  1   |       |   1   |      |  1  |         | 
+
+Doc B         |  1  |      |  1  |   1    |      |  1   |  1  |      |       |       |  1   |  1  |         |   1
+
+Doc C    1    |     |      |     |        |      |  1   |     |      |   1   |       |      |  1  |    1    | 
+
+
+
+Similarly, we can represent queries as vectors:
+
+
+
+        brown | dog | dogs | fox | jumped | lazy | lead | out | over | paint | quick | race | red | removed | wearing
+
+red dog       |  1  |      |     |        |      |      |     |      |       |       |      |  1  |         | 
+
+lazy fox      |     |      |  1  |        |  1   |      |     |      |       |       |      |     |         | 
+
+
+
+
+
+Note that we left the zeros blank – that’s typical for sparse representations and makes it easier to visualize. Also, for the mathematically inclined, these aren’t unit vectors – they have to be normalized to have a length of 1. But let’s not worry about that for now.
+
+Let’s get back to our cosines. We said that we can measure the similarity between two vectors – in particular, a query and a document – by computing the cosine of the angle between them. So how do we do that?
+
+It turns out that there is a convenient formula for it. If the two vectors are unit vectors, all you have to do is compute, for each dimension, the product of the coordinates of each of the two vectors in that dimension, and then take the sum of the products. This is also known as the dot product of the two vectors.
+
+What if they aren’t unit vectors? To get the cosine from the dot product, you just normalize the vectors, which means dividing the dot product by the product of the lengths of the two vectors. Here’s the formula:
+
+cos(θ) = \frac{(a ⋅ b)}{ ||a|| ||b||}
+cos(θ)= 
+∣∣a∣∣∣∣b∣∣
+(a⋅b)
+​
+ 
+Also, the length of a vector is just the square root of its dot product with itself:
+
+||a|| = \sqrt{a ⋅ a}
+∣∣a∣∣= 
+a⋅a
+​
+ 
+Now let’s get back to our document vectors. Most of the coordinates are 0s, and anything multiplied by 0 equals 0. We only need to worry about coordinates where both vectors have 1s, since all the other products will be 0. Which means that, for these vectors, the dot product just counts the number of tokens that the two documents have in common.
+
+That’s one way to measure the similarity between two documents, but it’s pretty crude. So let’s remember why we looked into token-weighting: Some tokens carry more meaning than others, and rare tokens tend to be more important to the meaning of a document than frequent tokens.
+
+So let’s use tf-idf to assign token weights to our coordinates instead of just giving all of them a weight of 1. Now, the similarity is still based on shared tokens, but we give more weight to the tokens that we believe are important.
+
+ A quick reminder of how we define tf-idf:
+
+A token that is repeated in a document is more important to the document. We can measure this as term frequency (tf), optionally normalizing to the document length.
+
+A token that occurs in fewer documents in the index is more important to the documents in which it occurs. We can measure this as inverse document frequency (idf). More precisely, we use the negative of the logarithm of the inverse document frequency.
+
+The tf-idf is just the product of these two quantities: tf*idf.
+
+For example, let’s look at our 3 example documents above as an example. Since there are only 3 documents, the idf scores of the tokens are as follows:
+
+dog, dogs, lazy, out, ...
+
+Occurs in 1 document
+
+-log(1/3) = 0.477
+
+brown, fox, jumped, lead
+
+Occurs in 2 documents
+
+-log(2/3) = 0.176
+
+red
+
+Occurs in 3 documents
+
+-log(3/3) = 0
+
+In Doc A ("The quick red fox jumped over the lazy brown dogs."), the tf-idf score of “dog” would be 1  0.477 = 0.477, while the tf-idf score of “fox” would be 1  0.176 = 0.176. But the tf-idf score of “red” would be 1 * 0 = 0.
+
+This is a toy example, but in general, we expect to see tf-idf favor words that are repeated in documents (making tf higher) but infrequent in the index (making idf higher).
+
+👀 As a historical note, the concepts you’re learning here date back to the foundations of information retrieval. The idea of using vector spaces to represent documents and queries came from Gerard Salton, in a 1975 paper on “A Theory of Indexing”. Meanwhile, idf came from Karen Spärck-Jones, in a 1972 paper entitled “A Statistical Interpretation of Term Specificity and its Application in Retrieval”. We highly recommend these papers by the pioneers of information retrieval to anyone who wants to understand the history of the field.
+
+The indexing process gives us the opportunity to compute tf values for each document token, as well as to compute idf values for each token based on the documents indexed to date and updated as new content comes in. To use these values for ranking, it’s important that they be efficiently available at run time. In practice, that means storing the weights as payloads in the inverted index. Don’t worry, this is something that your search engine should do for you. But it’s good to know how it works.
+
+There’s also a lot of room for search engines to perform optimization to identify the results that are closest to the query based on the cosine score. The details of this optimization are out of the scope of this course, but be aware that the search engine may not be computing every cosine exactly.
+
+Just a couple of notes as we close out this section:
+
+A cosine of 1 means that two vectors point in the same direction. For unit vectors, that means that the two vectors are identical. In other words, two identical vectors have a cosine of 1, while a cosine less than 1 measures how similar they are. So sorting results by cosine is a way of sorting by similarity to the query.
+
+Document size matters! As we mentioned, the tf score can be normalized by document length. Why would you want to do that? If you don’t then the tf*idf score is likely to favor long documents over shorter ones, which doesn’t necessarily promote the most relevant results. Normalizing tf by document length is a contentious topic, but you should at least consider it when you have an index whose documents – or fields – vary widely in length.
+
+
+
+We’ve now built our intuition about how tokens and weights feed into calculating the scores used for relevance. You may even see some potential challenges – different words can have the same meaning, and a single word can have multiple meanings. We’ll get to that! For now, keep the vector space model in mind, since almost everything we do comes down to improving our representation of query and document vectors.
+
+No Single Right Approach
+While you could use this cosine score for ranking, most search engines take a more nuanced approach. They may start with a simple scoring function based on token weights, like tf-idf or BM25, but they generally provide multiple customizable scoring functions that you can mix and match as you configure a search application. Indeed, Lucene, which is the foundation for OpenSearch, Elastic, and Solr, offers a variety of scoring algorithms,
+
+Moreover, most engines offer a multiphase ranking approach. A best practice for search applications is to start with a relatively cheap scoring function like tf-idf or BM25, reduce the results to the top scoring documents from that function, and then proceed with a series of more sophisticated – and expensive – scoring functions on successively smaller subsets of results. In OpenSearch, this process is called rescoring. It’s also known as “cascading ranking”, since the results cascade from one ranker to the next until the final results are returned.
+
+A few thoughts:
+
+The primary motivation for a multiphase ranking approach is computational efficiency. Since you can’t afford to compute an expensive scoring function for every result, the earlier phases try to ensure the best prioritization of computational resources.
+
+In theory, this means that the rankers are aligned, with each successive ranker being more precise in its calculation than the previous ones. In practice, this may not be the case, so watch out for rankers playing tug-of-war with each other!
+
+The various rankers can use completely different approaches, such as hand-tuned weights, simple machine learning, or deep neural networks. Just try to observe the general principle of increasingly expensive scorers applied to decreasing subsets of results.
+
+You can also use a multiphase ranking approach to address concerns like search result diversity or to implement business rules. That’s very different from traditional ranking, however, so let’s keep that out of scope for now.
+
+The flexibility of multiphase ranking should also make it clear that there is no single right approach or model. Search engine platforms provide flexibility because search engine developers need it.
+
+But there’s a downside to that flexibility: It’s easy for a search application to become extremely complex, especially if lots of folks keep making manual tweaks to it. Those tweaks eventually become cumbersome, inefficient, and even contradictory.
+
+That’s where machine learning comes in. Instead of trying to tweak your way to an optimal ranking function, focus on what humans are best at – making relevance judgments. Then let the machine do its job: optimizing a scoring function based on those judgments.
+
+Regardless of whether we use hand-tuned or machine-learned approaches, improving relevance mostly involves better representing the signals from documents, queries, and users. When you’re trying to improve relevance, focus on the following:
+
+Index: Improve the way the content is represented, including by making better use of external resources. Includes content understanding.
+
+Query: Improve the way the query is represented, rewriting it or otherwise transforming it before using it for scoring. Includes query understanding.
+
+Retrieval: Since retrieval determines which results will be scored, make sure the algorithm is doing a good job of balancing precision and recall before the ranker scores its results.
+
+Scoring: This is what most people think of as the core of relevance. And indeed it’s important, especially after you’ve done what you can to improve the index, query, and retrieval.
+
+Finally, don’t forget that your users are intelligent human beings who are active participants in the search process! Sometimes you need to think less about retrieval and ranking and more about how to solicit the best input from your users:
+
+Invest in the search user experience! Make sure you’re providing robust type ahead / autocomplete, faceted search, result snippets, and spelling correction. Pay attention to design details, too – fonts, colors, spacing, and layout have surprisingly high impact.
+
+Help your users help themselves. Make sure users can see the search functionality available to them, whether that means using filters or simple search operators like quotes. While it’s true that many searchers are lazy, it can’t hurt to educate your users.
+
+Ranking: Query-Dependent vs. Query-Independent Signals
+An important distinction to make when you’re figuring out your approach to scoring and ranking is that some signals are query-dependent, while other signals are query-independent.
+
+Query-dependent signals relate the query to the document. They include the tf-idf and BM25 scores we’ve mentioned, but they can be simpler (e.g., the number of query tokens that overlap with tokens in the document’s title field) or more complex (e.g., the cosine using a machine-learned vector space). In general, query-dependent signals tend to be at the heart of relevance, since they focus on the relationship between the document and the query.
+
+Query-independent signals ignore the query. What kinds of signals are those? They typically include a document’s popularity, or in a context like ecommerce, its price and sales rank. Query-independent signals tend to be less about relevance and more about desirability – They indicate which relevant results users actually want. Since desirability drives clicks and purchases just as much as relevance, query-independent signals make a big difference.
+
+A useful framing is that query-dependent signals are good for determining relevance, while query-independent signals are good for determining desirability. This suggests a strategy of using query-dependent signals to determine the set of relevant results, and then query-independent signals to sort the relevant results by their desirability.
+
+A nice thing about query-independent signals is that you can compute them offline, so it’s cheap and easy to use them for sorting results at runtime.
+
+Common Techniques
+When it comes to improving relevance, it’s helpful to have a variety of tricks in your arsenal. Here are some common techniques:
+
+Analyzers: Tokens are the fundamental unit of indexing and retrieval, and they play a key role in ranking too. By investing in your analyzer, you can ensure you’re getting the right tokens, whether that means stemming, tweaking your handling of punctuation, or figuring out what to do with numbers and alphanumeric IDs. Modifying your analyzer tends to be cheap and easy to do, and you can often take advantage of existing tools, like stemmers and other NLP models. Just bear in mind that analyzers are highly language-dependent, and that any change you make will require reindexing.
+
+Field and document boosting: Field boosting is a simple, if crude, way to introduce a query-dependent signal that emphasizes matching fields that have a high signal-to-noise ratio, such as a document title or product name. Conversely, document boosting is a way to create a query-independent signal based on overall document importance. These are simple tools, but you can get surprisingly far with them.
+
+Content understanding: You should take advantage of any easy opportunities to improve the representation of your content using external resources, rules, or machine learning. The search engine’s ability to retrieve and rank content can only be as good as the representation of that content in the index.
+
+Synonyms: Synonyms are the go-to solution to increase recall, by returning relevant documents even if users don’t search with the same words that are in the document. But don’t go overboard! It’s easy to accumulate an unmaintainable dictionary with lots of synonym pairs of questionable vintage that have unintended consequences when synonyms fail to respect what a word means in context. And of course, synonyms are completely language-dependent.
+
+Autophrasing: Sometimes, multiple tokens represent a single semantic unit, such as “dress shirt” in the query “white dress shirt”. Treating this segment as a phrase, i.e., rewriting the query so that “dress shirt” has to match tokens in that order, can significantly improve precision, avoiding matches for white shirt dresses.
+
+Query understanding: As with content understanding, you should also take advantage of any opportunities to improve the representation of your query using external resources, rules, or machine learning. The search engine’s ability to find relevant results can only be as good as the representation of the query it’s using to search the index.
+
+Pseudo relevance feedback: Also known as blind feedback, this is a clever way to bootstrap on the initial results returned by the ranker to find more relevant results. It’s a bit expensive to run this additional computation, but it’s a technique to keep in mind, especially if you don’t have enough data to train a machine learning model.
+
+Experimentation: This is a bit of a catch-all, but you often won’t know what works until you try it. Keep an open mind, and experiment with different indexing, query rewriting, and scoring configurations. Learn from offline analysis when you can and from online experiments (i.e., A/B tests) when you can’t.
+
+Manual overrides: Manually adjusting how your search engine responds to particular queries or treats particular documents isn’t a scalable approach, but it’s a simple way to solve a contained problem. Sometimes it’s better to implement a simple manual override than to build a more complex general solution. It’s important to resist the temptation to implement so many manual overrides that you end up with an unmaintainable mess, however.
+
+User experience: Not all search problems require retrieval and ranking solutions! Make sure you’re providing robust search features, like type ahead / autocomplete, faceted search, result snippets, and spelling correction. Pay attention to design details, too.
+
+This list isn’t exhaustive, but it should give you more than enough ideas to work with.
+
+Before we apply these approaches, let’s look at some common pitfalls to avoid when you’re tuning relevance.
+
+Pitfalls in Tuning Ranking
+Tuning ranking is as much an art as it is a science.  Even though we have lots of metrics and tools at our disposal, we have to figure out which ones to use, when to apply them, and how to measure their impact. Learning some theory and best practices helps, but there is no substitute for experience. Sometimes prudence is the better part of valor. Not all problems yield to solutions, and many fixes can leave things worse than the problems they were intended to solve.
+
+It’s important to recognize the warning signs that you are on a bad path. Here some of the more common pitfalls we’ve seen engineers, product owners, and data scientists stumble into when it comes to tuning ranking:
+
+Failure to iterate: Ranking is not something you’re going to get right on the first try, even if you’re a seasoned expert! Indeed, experts are folks who have learned to take an agile approach to ranking, starting with simple models and iterating on them to deliver continuous improvements. Even if you’re not experienced yet, you should take this approach.
+
+Premature Optimization: The flip side of failing to iterate is overinvesting in tuning ranking before you have enough data to measure it. That’s part of why you should start with something simple – Until you have feedback from real user behavior, you’re flying blind.
+
+Relying on anecdotal data: It’s important to learn from data, and it can be valuable to learn from individual, anecdotal examples. It’s dangerous, however, to let anecdotal examples drive decision-making, even if they come from the CEO. Ranking must be data-driven.
+
+Lack of tracking or infrastructure: In order to tune ranking, you need to have already invested in solutions for tracking, storing, and accessing search application data so that it can be used for analytics and machine learning models. It can be a rude awakening if you or someone in your management chain suddenly decides that ranking is a priority, and you don’t have this infrastructure in place.
+
+Ignorance of tradeoffs: There’s an inherent tradeoff between precision and recall – Investing in one is almost always at the expense of the other. There are other tradeoffs too, such as model quality vs. computational efficiency. When you are tuning ranking, or any other part of a search application, it’s important to remember that everything is a tradeoff.
+
+Pursuing diminishing returns: This is especially tempting when improvements in ranking translate directly into revenue. By all means pursue gains, but recognize that at some point the diminishing returns simply won’t pay off. Also, avoid the temptation to squint at experiment reports (or engage in p-hacking) to justify dubious investments.
+
+Tunnel vision: Search queries take place in the context of search sessions. Some searches are attempts to navigate to landing pages or site features, rather than to find results. And sometimes users satisfy their information needs without touching the search box at all, by instead browsing or clicking on banners. It’s important to remember that search queries fit into a broader context and to keep that in mind while tuning ranking. Sometimes the best way to solve a search problem may have nothing to do with the scoring function.
+
+Configuration issues: Before you spend hours or days tuning ranking, make sure ranking is really the problem. Misconfigured, mismatched, and faulty analyzers are often the root cause of failing searches. Look for simple causes before investigating complex ones.
+
+
+
+Again, this is not an exhaustive list. But hopefully you now have a good understanding of relevance and ranking, as well as ideas around how to approach improving it. So let’s continue our journey and explore some of the technical aspects of improving ranking in OpenSearch.
+
+Quiz
+Why is vector space search scoring primarily modeled after taking the cosine of the angle between the query vector and the document vector? 
+
+The angle between two equal vectors (same length and orientation) has a cosine of 1
+
+The angle between two equal vectors varies based on its overall vector space, but the cosine normalizes them, so they can be compared equally
+
+The angle between two equal vectors (same length and orientation) has a cosine of 0
+
+Cosine is faster to calculate than other approaches
+
+Which of the following is not a query-independent signal for ranking?
+
+Overall popularity of the item
+
+Inventory/availability of the item
+
+PageRank of the item
+
+BM25 score of the item
+
+Recall in search is a measure of:
+
+The number of relevant results in the top 10
+
+The average position of the first clicked document
+
+The number of relevant results retrieved out of the total number of relevant results
+
+I can’t recall
+
+Ranking in OpenSearch
+In this section, we are going to start to put into practice some of these ideas by exploring how they work in OpenSearch.  We’ll start by showing you a few tools that are helpful for debugging ranking, and then we’ll look at some ranking features in OpenSearch.  We will then demonstrate ranking using a hand-tuned scoring function.
+
+Debugging Ranking
+OpenSearch provides some tools that can help you better understand how a query was parsed and why it matched a particular result.  We can frame this investigation as a series of questions, which we will tackle below.  For each of these, you will need the Dev Tools UI.  The requests we will execute can be found in debugging_ranking.dev.
+
+How was my query parsed?
+To see how your query was parsed, especially when using the “query_string” parser, we can leverage the OpenSearch validate endpoint with explain=true.  Please see debuggingranking.dev and set up the index and documents using the PUT commands starting around line 113.   Here are a few examples, starting with a simple example and increasing in complexity:
+
+
+# Try a simple query
+
+GET /search_fun_test/_validate/query?explain=true
+
+{
+
+  "query": {
+
+      "term":{
+
+        "title": "dog"
+
+      }
+
+  }
+
+}
+
+
+Output: 
+
+
+{
+
+  "_shards" : {
+
+    "total" : 1,
+
+    "successful" : 1,
+
+    "failed" : 0
+
+  },
+
+  "valid" : true,
+
+  "explanations" : [
+
+    {
+
+      "index" : "search_fun_test",
+
+      "valid" : true,
+
+      "explanation" : "title:dog"
+
+    }
+
+  ]
+
+}
+
+
+
+# Try a more complicated query
+
+GET /search_fun_test/_validate/query?explain=true
+
+{
+
+  "query": {
+
+      "bool":{
+
+        "must":[
+
+            {"query_string": {
+
+                "query": "dogs OR cats OR \"bad wolf\" (house or puffed)"
+
+            }}
+
+        ]
+
+
+      }
+
+  }
+
+}
+
+
+
+Output:
+
+
+{
+
+  "_shards" : {
+
+    "total" : 1,
+
+    "successful" : 1,
+
+    "failed" : 0
+
+  },
+
+  "valid" : true,
+
+  "explanations" : [
+
+    {
+
+      "index" : "search_fun_test",
+
+      "valid" : true,
+
+      "explanation" : """+(body:dog body:cat body:"bad wolf" (body:hous body:puf))"""
+
+    }
+
+  ]
+
+}
+
+
+
+As you can see in the last example, queries can be quite complex under the hood!  As you look at these, keep an eye out for fields that are missing, surprising boosts, and parsing exceptions that might explain why you have bad results.  
+
+How was this document analyzed?
+One of the most common causes of search problems is a mismatch in text analyzers. While you don’t necessarily have to use identical analyzers for indexing and query processing, it’s important that the analyzers be aligned. For example, if one analyzer stems tokens and the other doesn’t, you are likely to run into problems. Fortunately, OpenSearch provides an _analyze API that makes it easy to see the results of text analysis.  We got a taste of this functionality in week 1, but it’s worth reviewing it with a few examples, since the API has a number of different options:
+
+
+# Analyze two sentences and output detailed explanations
+
+GET /_analyze
+
+{
+
+  "analyzer": "english",
+
+  "explain": "true",
+
+  "text": ["Wearing all red, the Fox jumped out to a lead in the race over the Dog.", "All lead must be removed from the brown and red paint."]
+
+}
+Partial results:
+
+
+{
+
+  "detail" : {
+
+    "custom_analyzer" : false,
+
+    "analyzer" : {
+
+      "name" : "english",
+
+      "tokens" : [
+
+        {
+
+          "token" : "wear",
+
+          "start_offset" : 0,
+
+          "end_offset" : 7,
+
+          "type" : "<ALPHANUM>",
+
+          "position" : 0,
+
+          "bytes" : "[77 65 61 72]",
+
+          "keyword" : false,
+
+          "positionLength" : 1,
+
+          "termFrequency" : 1
+
+        },
+
+        {
+
+          "token" : "all",
+
+          "start_offset" : 8,
+
+          "end_offset" : 11,
+
+          "type" : "<ALPHANUM>",
+
+          "position" : 1,
+
+          "bytes" : "[61 6c 6c]",
+
+          "keyword" : false,
+
+          "positionLength" : 1,
+
+          "termFrequency" : 1
+
+        },
+
+        {
+
+          "token" : "red",
+
+          "start_offset" : 12,
+
+          "end_offset" : 15,
+
+          "type" : "<ALPHANUM>",
+
+          "position" : 2,
+
+          "bytes" : "[72 65 64]",
+
+          "keyword" : false,
+
+          "positionLength" : 1,
+
+          "termFrequency" : 1
+
+        },
+In this output, you are looking for a variety of things, such as stemming issues, wrong offsets and positions, and missing or unexpected tokens.
+
+The analyze API can also be handy for trying out your own analyzer on some content before committing to your choice of character normalization and tokenizer.  See the API query parameters for details, as well as the example below:
+
+
+# Pass in a custom analyzer
+
+GET /_analyze
+
+{
+
+  "tokenizer" : "standard",
+
+  "filter" : ["lowercase", "snowball"],
+
+  "explain": "true",
+
+  "text": ["Wearing all red, the Fox jumped out to a lead in the race over the Dog.", "All lead must be removed from the brown and red paint."]
+
+}
+Abbreviated output for the Snowball (stemmer) part of the analysis:
+
+
+{
+
+        "name" : "snowball",
+
+        "tokens" : [
+
+          {
+
+            "token" : "wear",
+
+            "start_offset" : 0,
+
+            "end_offset" : 7,
+
+            "type" : "<ALPHANUM>",
+
+            "position" : 0,
+
+            "bytes" : "[77 65 61 72]",
+
+            "keyword" : false,
+
+            "positionLength" : 1,
+
+            "termFrequency" : 1
+
+          },
+
+          {
+
+            "token" : "all",
+
+            "start_offset" : 8,
+
+            "end_offset" : 11,
+
+            "type" : "<ALPHANUM>",
+
+            "position" : 1,
+
+            "bytes" : "[61 6c 6c]",
+
+            "keyword" : false,
+
+            "positionLength" : 1,
+
+            "termFrequency" : 1
+
+          },
+
+          {
+
+            "token" : "red",
+
+            "start_offset" : 12,
+
+            "end_offset" : 15,
+
+            "type" : "<ALPHANUM>",
+
+            "position" : 2,
+
+            "bytes" : "[72 65 64]",
+
+            "keyword" : false,
+
+            "positionLength" : 1,
+
+            "termFrequency" : 1
+
+          },
+
+
+Why did this document match this query?
+Seeing how content is analyzed and how a query is parsed are both useful, but neither tells you why a particular document matched a particular query, or how its score was calculated.  For that, you can use the explain API endpoint or add explain=true as a query parameter when you use the search API endpoint. The former explains why the document matches the query, while the latter returns the explanations with the rest of the search results. Both approaches walk through the factors that go into scoring a document and return them in a structured way.
+
+ Let’s see some examples:
+
+
+# Explain a particular doc
+
+POST /search_fun_test/_explain/doc_a
+
+{
+
+  "query": {
+
+      "bool":{
+
+        "must":[
+
+            {"query_string": {
+
+                "query": "dogs"
+
+            }}
+
+        ]
+
+      }
+
+  }
+
+}
+Outputs:
+
+
+{
+
+  "_index" : "search_fun_test",
+
+  "_type" : "_doc",
+
+  "_id" : "doc_a",
+
+  "matched" : true,
+
+  "explanation" : {
+
+    "value" : 1.3204864,
+
+    "description" : "max of:",
+
+    "details" : [
+
+      {
+
+        "value" : 1.3204864,
+
+        "description" : "weight(body:dogs in 0) [PerFieldSimilarity], result of:",
+
+        "details" : [
+
+          {
+
+            "value" : 1.3204864,
+
+            "description" : "score(freq=1.0), computed as boost  idf  tf from:",
+
+            "details" : [
+
+              {
+
+                "value" : 2.2,
+
+                "description" : "boost",
+
+                "details" : [ ]
+
+              },
+
+              {
+
+                "value" : 1.2039728,
+
+                "description" : "idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:",
+
+                "details" : [
+
+                  {
+
+                    "value" : 1,
+
+                    "description" : "n, number of documents containing term",
+
+                    "details" : [ ]
+
+                  },
+
+                  {
+
+                    "value" : 4,
+
+                    "description" : "N, total number of documents with field",
+
+                    "details" : [ ]
+
+                  }
+
+                ]
+
+              },
+
+              {
+
+                "value" : 0.49853373,
+
+                "description" : "tf, computed as freq / (freq + k1  (1 - b + b  dl / avgdl)) from:",
+
+                "details" : [
+
+                  {
+
+                    "value" : 1.0,
+
+                    "description" : "freq, occurrences of term within document",
+
+                    "details" : [ ]
+
+                  },
+
+                  {
+
+                    "value" : 1.2,
+
+                    "description" : "k1, term saturation parameter",
+
+                    "details" : [ ]
+
+                  },
+
+                  {
+
+                    "value" : 0.75,
+
+                    "description" : "b, length normalization parameter",
+
+                    "details" : [ ]
+
+                  },
+
+                  {
+
+                    "value" : 10.0,
+
+                    "description" : "dl, length of field",
+
+                    "details" : [ ]
+
+                  },
+
+                  {
+
+                    "value" : 12.75,
+
+                    "description" : "avgdl, average length of field",
+
+                    "details" : [ ]
+
+                  }
+
+                ]
+
+              }
+
+            ]
+
+          }
+
+        ]
+
+      }
+
+    ]
+
+  }
+
+}
+Explain as part of search:
+
+
+# Explain as a query
+
+GET /search_fun_test/_search?explain=true
+
+{
+
+  "query": {
+
+      "bool":{
+
+        "must":[
+
+            {"query_string": {
+
+                "query": "dogs OR cats OR \"bad wolf\" (house or puffed)"
+
+            }}
+
+        ]
+
+      }
+
+  }
+
+}
+Partial output:
+
+
+  "max_score" : 4.6301885,
+
+    "hits" : [
+
+      {
+
+        "_shard" : "[search_fun_test][0]",
+
+        "_node" : "u07jkOi0R4C4_OEz6koZBg",
+
+        "_index" : "search_fun_test",
+
+        "_type" : "_doc",
+
+        "_id" : "doc_d",
+
+        "_score" : 4.6301885,
+
+        "_source" : {
+
+          "title" : "The Three Little Pigs Revisted",
+
+          "body" : "The big, bad wolf huffed and puffed and blew the house down. The end.",
+
+          "category" : "childrens"
+
+        },
+
+        "_explanation" : {
+
+          "value" : 4.6301885,
+
+          "description" : "sum of:",
+
+          "details" : [
+
+            {
+
+              "value" : 2.3150942,
+
+              "description" : "max of:",
+
+              "details" : [
+
+                {
+
+                  "value" : 2.3150942,
+
+                  "description" : """weight(body:"bad wolf" in 3) [PerFieldSimilarity], result of:""",
+
+                  "details" : [
+
+                    {
+
+                      "value" : 2.3150942,
+
+                      "description" : "score(freq=1.0), computed as boost  idf  tf from:",
+
+                      "details" : [
+
+                        {
+
+                          "value" : 2.2,
+
+                          "description" : "boost",
+
+                          "details" : [ ]
+
+                        },
+
+                        {...
+
+
+As you can see from both of these examples, scoring is complicated! Understanding these “explanations” is again a bit of an art and a science. You’ll get better at it with experience and a deeper understanding of how scoring works under the hood. Meanwhile, here are a few tips:
+
+Start with the big picture: which terms and clauses are contributing the most to the score? Do those values look reasonable? Is there one clause that dominates the rest?
+
+Are all the fields present that you would expect to contribute to the score?
+
+Are you using the right similarity measure?
+
+How are boosts being distributed across the clauses and in the document?
+
+👀 Aside: In the early days of Lucidworks, Grant had a client who was losing millions of dollars a week due to poor performing searches on one of their top products. A search by exact name was returning the product on page 10! Debugging the issue took less than an hour – Looking at the “explain” output revealed that one of the key matching fields (the description field) for that document was empty and thus wasn’t contributing to its score despite being a significant factor in the other documents.
+
+Look at your logs!
+We started off this week looking at frequent queries and the most frequently clicked results for those queries. You should always make your query-click logs searchable so that you can compare how real users interacted with your content.  Simple aggregations enable you to quickly see what documents were clicked on and help you start to get insights about your search performance. There are lots of ways to slice and dice this data.  For instance, the following aggregation first groups queries by date, one week at a time, then grabs the top 10 queries, and finally the top 5 documents for each of those queries. Ultimately, this query gives you the top queries and the top clicked documents for each week.  Notice the nested aggregations!
+
+
+# Try out some query log aggregations
+
+GET /bbuy_queries/_search
+
+{
+
+  "size": 0,
+
+  "aggs": {
+
+    "queries_per_week":{
+
+      "date_histogram": {
+
+        "field": "click_time",
+
+        "interval": "week"
+
+      },
+
+      "aggs":{
+
+       "Query": {
+
+            "terms": {
+
+              "size": 10, 
+
+              "field": "query.keyword"
+
+            },
+
+            "aggs":{
+
+              "Docs":{
+
+                "terms":{
+
+                  "size": 5,
+
+                  "field": "sku.keyword"
+
+                }
+
+              }
+
+            }
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+
+
+Partial output looks like:
+
+
+"aggregations" : {
+
+    "queries_per_week" : {
+
+      "buckets" : [
+
+        {
+
+          "key_as_string" : "2011-08-08 00:00:00.0",
+
+          "key" : 1312761600000,
+
+          "doc_count" : 59261,
+
+          "Query" : {
+
+            "doc_count_error_upper_bound" : 0,
+
+            "sum_other_doc_count" : 56796,
+
+            "buckets" : [
+
+              {
+
+                "key" : "Watch the throne",
+
+                "doc_count" : 383,
+
+                "Docs" : {
+
+                  "doc_count_error_upper_bound" : 0,
+
+                  "sum_other_doc_count" : 0,
+
+                  "buckets" : [
+
+                    {
+
+                      "key" : "3168067",
+
+                      "doc_count" : 283
+
+                    },
+
+                    {
+
+                      "key" : "3168049",
+
+                      "doc_count" : 91
+
+                    },
+
+                    {
+
+                      "key" : "2965038",
+
+                      "doc_count" : 8
+
+                    },
+
+                    {
+
+                      "key" : "1203048",
+
+                      "doc_count" : 1
+
+                    }
+
+                  ]
+
+                }
+
+              },
+
+              {
+
+                "key" : "lady gaga",
+
+                "doc_count" : 275,
+
+                "Docs" : {
+
+                  "doc_count_error_upper_bound" : 0,
+
+                  "sum_other_doc_count" : 0,
+
+                  "buckets" : [
+
+                    {
+
+                      "key" : "2588463",
+
+                      "doc_count" : 275
+
+                    }
+
+                  ]
+
+                }
+
+              },
+
+              {
+
+                "key" : "iPad",
+
+                "doc_count" : 265,
+
+                "Docs" : {
+
+                  "doc_count_error_upper_bound" : 0,
+
+                  "sum_other_doc_count" : 82,
+
+                  "buckets" : [
+
+                    {
+
+                      "key" : "1945531",
+
+                      "doc_count" : 130
+
+                    },
+
+                    {
+
+                      "key" : "2339322",
+
+                      "doc_count" : 16
+
+                    },
+
+                    {
+
+                      "key" : "1945674",
+
+                      "doc_count" : 14
+
+                    },
+
+                    {
+
+                      "key" : "1945595",
+
+                      "doc_count" : 12
+
+                    },
+
+                    {
+
+                      "key" : "1918265",
+
+                      "doc_count" : 11
+
+                    }
+
+                  ]
+
+                }
+
+              },
+
+
+Signals to Use for Ranking
+The scoring function for ranking generally combines query-independent and query-dependent signals. Here are some of the most common sources for these signals:
+
+Query-Independent
+
+Document metadata like price, margin, and popularity. You’ll generally want to normalize these values if they have a large range.
+
+Document quality or authority, as measured by factors like PageRank, number of inbound links, external resources, or a separate machine learning system.
+
+Document length or the length of a particular field, like title or URL. Anomalous sizes (too short or too long) often serve negative signals.
+
+Global engagement data, such as clicks or CTR. To the extent that results only show up when they are relevant, global CTR can be an excellent signal.
+
+Query-Dependent
+
+Match score for document or a particular field like title. The score can be as simple as the number of matching tokens, or it could be something more complex like using token-weighting (like tf-idf of BM25) or the cosine using an embedding.
+
+Query-specific engagement data, like global engagement, but specific to that query. Since this data can be sparse, it’s helpful to aggressively normalize queries with an analyzer, or even to group tail queries by tokens or category.
+
+Strategies for Zero Results or Bad Results
+Ranking is critical when there are a lot of results, since it promotes the best results to the top, where the searcher will see them. But what happens when there are no results? Or if all of the results are irrelevant?
+
+There are two main reasons that a search can fail to return any relevant results:
+
+Lack of relevant inventory.
+
+Failure to understand the searcher’s intent.
+
+Lack of Relevant Inventory
+If there isn’t any relevant inventory, then the best way the search engine can respond to the searcher is with an acknowledgement and plausible alternatives.
+
+Consider the scenario in a restaurant where a customer asks for a Coke: it’s perfectly reasonable for the server to respond, “Sorry, we don’t have Coke. Is Pepsi OK?”
+
+Similarly, if there is no inventory that precisely matches the searcher’s intent, then the search engine should show the searcher that it understood the request, apologize for the lack of inventory, and then make its best effort to satisfy the searcher with a substitute.
+
+The most common substitution strategy is query relaxation, dropping one or more tokens in order to obtain results that at least partially match the query. A more sophisticated approach assumes some kind of query understanding – If the search engine can identify the general category of the query, then it can propose popular results from that category. That approach, however, generally requires machine learning.
+
+Failure to Understand Searcher Intent
+Sometimes there is relevant inventory, but the search engine fails to retrieve it. This tends to happen because the search engine fails to understand the searcher’s intent. In this case, the obvious solution is for the search engine to do a better job of understanding intent! But, barring that, the search engine should at least try to recognize its failure and offer the searcher options to resolve the communication breakdown.
+
+But how does the search engine recognize that it failed to understand the searcher’s intent, as opposed to simply lacking relevant inventory? It’s not always easy, especially if there are no results. Query understanding can help, but again, this generally requires machine learning. If there are results, then it’s worth looking at the coherence of those results. For example, if there are 10 results from 10 different categories, that’s a strong signal that the search engine has no idea what the searcher is looking for.
+
+While a certain amount of diversity among the results is a good thing, the results should still be connected by a common thread. That common thread may turn out to be wrong if the search engine misunderstands the searcher’s intent, but if there is no common thread at all, then we know that the search engine didn’t understand the searcher’s intent. A simple way to measure how well the results are related is with the entropy of the category distribution of the results – The lower the entropy, the stronger the connection between the results.
+
+[Optional] Bonus Content: Multiphase Ranking
+Now that we have explored tools and tricks for debugging relevance issues, let’s take a sneak peak at a technique commonly used in machine learning applications,multiphase ranking. The examples you see here are all taken straight from our Search with Machine Learning class, with minimal modification, as a bit of a teaser for folks.
+
+Imagine for a moment that you had the perfect ranking model. It was trained on millions of query-click pairs, and it had access to every signal a data scientist could dream of to help with relevance.  This model would be so good that it could accurately predict the difference in performance between showing one document over the other with a near perfect degree of accuracy.  Sounds pretty great, right? 
+
+This dream model has only one downside – It’s slow, so slow that it can only rank 20 documents in 10 milliseconds.
+
+Doesn’t sound so great anymore, right? Clearly, you can’t use this model to score thousands (or millions!) of results without bringing your search application to a grinding halt. Most Google users expect a sub-second response from search applications, and that includes not just ranking, but the entirety of the stack. Model quality is important, but we still need efficiency.
+
+
+Here is a sample image caption.
+
+
+Many search engines manage this tradeoff between model quality and efficiency by using a multiphase ranking approach. For example, the first ranker could use BM25 scoring, and then the next ranker could feed its 1000 top-scoring results to a classifier, which in turn might feed its top 100 results to a more expensive model to obtain the final ranking. The stakes increase as we focus on the top few results, especially in contexts like web search, where there is a huge drop in engagement between first and second positions.
+
+How do we implement a multiphase ranker? A naive implementation might fetch a large number of results, scoring them, and send them onto the next ranker, but that would involve a massive amount of network traffic. Fortunately, OpenSearch provides a rescoring framework. 
+
+Rescoring
+Most modern search engines support the use of values in a document, along with a user defined function, as part of scoring.  In OpenSearch/Elastic, this is called a Function Score  query. As it turns out, function scoring can be expensive, making it a good candidate for rescoring. Rescoring is the basic tool for multiphase ranking – After scoring using one approach, we pick off its top-scoring results and rescore them with another approach.
+
+👀 Aside: There is a lot of “it depends” when it comes to performance, so be sure to run your own benchmarks on your own data to determine whether a type of query meets your needs.  Don’t get bogged down in optimizing for efficiency if you don’t have to. Ask yourself, “Is it fast enough to still meet my performance and functionality goals?”  Oftentimes, the answer to this question is yes.
+
+As an example, let’s run a function query using our rescore capability (follow along in rescoring.dev for all of our examples in this section).
+
+As a baseline, let’s run a simple match-all query with a filter for “childrens.” This query should yield two docs. (NOTE: you will need to re-index the “search_fun_test” if that index was deleted.  These docs are at the bottom of the rescoring.dev file.)
+
+
+# Rescoring: first run the baseline
+
+GET search_fun_test/_search
+
+{
+
+  "query": {
+
+      "bool": {
+
+          "must": [
+
+              {"match_all": {}}
+
+          ],
+
+          "filter": [
+
+              {"term": {"category": "childrens"}}
+
+          ]
+
+      }
+
+  }
+
+}
+Output:
+
+
+Here is a sample image caption.
+
+
+Now, run a rescoring query:
+
+
+# Rework week 1 function score as a rescore
+
+POST search_fun_test/_search
+
+{
+
+  "query": {
+
+      "bool": {
+
+          "must": [
+
+              {"match_all": {}}
+
+          ],
+
+          "filter": [
+
+              {"term": {"category": "childrens"}}
+
+          ]
+
+      }
+
+  },
+
+  "rescore": {
+
+    "query": {
+
+      "rescore_query":{
+
+        "function_score":{
+
+          "field_value_factor": {
+
+            "field": "price",
+
+            "missing": 1
+
+          }
+
+        }
+
+        
+
+      },
+
+      "query_weight": 1.0,
+
+      "rescore_query_weight": 2.0
+
+    },
+
+    "window_size": 1 
+
+  }
+
+}
+
+
+In our rescoring query, we have our usual “function_score,” but here we’ve said our original score matches (“query_weight”) are worth one times their score (1x) and our second query scores (“rescore_query_weight”) are worth two times their score (2x).  We also have said to only rescore the first document, via the “window_size” parameter.  This effectively means our first document should be scored as:
+
+(1 x 1) + 2 x price = (1x1) + 2 * 5.99 = 12.98
+
+While our second document will be scored simply as the original score, in this case 1.0.
+
+Our results:
+
+
+Here is a sample image caption.
+
+
+As one more example, let’s cascade our query twice.  In order to do this, let’s remove the “childrens” filter, so we first get all documents. Then, let’s boost on a phrase, before finally boosting on price.
+
+First, our baseline:
+
+
+
+# Baseline:
+
+POST search_fun_test/_search
+
+{
+
+  "query": {
+
+      "match_all": {}
+
+  }
+
+}
+
+This yields 4 documents, all scored as 1.0.
+
+Next, our rescore:
+
+
+POST search_fun_test/_search
+
+{
+
+  "query": {
+
+      "match_all": {}
+
+  },
+
+  "rescore": [
+
+    {
+
+      "query": {
+
+        "rescore_query":{
+
+          "match_phrase":{
+
+            "body":{
+
+              "query": "Fox jumped"
+
+            }
+
+          }
+
+        },
+
+        "query_weight": 1.0,
+
+        "rescore_query_weight": 2.0
+
+      },
+
+      "window_size": 2
+
+    },
+
+    {
+
+      "query": {
+
+        "rescore_query":{
+
+          "function_score":{
+
+            "field_value_factor": {
+
+              "field": "price",
+
+              "missing": 1
+
+            }
+
+          }
+
+        },
+
+        "query_weight": 1.0,
+
+        "rescore_query_weight": 4.0
+
+      },
+
+      "window_size": 1
+
+    }
+
+  ]
+
+}
+Yields:
+
+
+Here is a sample image caption.
+
+
+Here, our cascade went over 2 results, then over 1.  Hence, ranks 3 (“doc_c”) and 4 (“doc_d”) both have their original score of 1.0.  Rank 2 (“doc_b”) is boosted just by the phrase match (“Fox jumped”). Finally, rank 1 (“doc_a”) gets boosted by both the phrase match and the price boost.
+
+🤔 Run an “explain” on the query to confirm! 
+
+Now that we know how to rescore, let’s put this idea into action and start altering our results.
+
+Altering Results
+To finish out the Ranking section, let’s look at a few approaches that we can use to change our results by focusing on the scoring (or ranking) aspect of search.  
+
+Manually Specified Results
+Sometimes it’s important, or desired, for the search engine to include or exclude specific results for specific queries. Common use cases include ads, landing pages, and requests from executives. Most search engines provide a means to manually specify such behavior – Elastic, for example, calls it pinned queries. Having the search engine handle these results is simpler than having to separately retrieve the pinned documents and manage them separately, while avoiding duplication of results. Pinned queries are often implemented in conjunction with search templates or upstream application-based logic layers or rules engines.
+
+👀 Note: The Pinned Query is part of Elastic’s X-Pack premium feature, so it is not available in OpenSearch.  However, it is trivial to implement via other query types, as we will demonstrate below by giving our set doc-ids very high scores.
+
+👀 Pro tip: Whether you should allow pinned queries in your application is entirely up to you, just be careful that it doesn’t become a sledgehammer for fixing any and all relevance issues. We’ve seen applications where literally all the hundreds of queries were pinned results because the company didn’t properly implement search or ranking.
+
+In our rescoring example above, we used rescoring to boost documents by phrases and sales rank.  In that case (see rescoring.dev), doc_c and doc_d were both returned with scores of 1.0 and were at the bottom of our results. Since we were using the match_all query as our initial search to retrieve all documents, a common case when a user first lands on a search-driven application, we might also want to pin certain results at the top so that we know they are displayed no matter what match_all returns.  The following example shows us pinning doc_d to the top of the results while still executing the rest of the search as defined earlier:
+
+
+# Pin results
+
+POST search_fun_test/_search
+
+{
+
+  "query": {
+
+      "bool":{
+
+        "should": [
+
+          {
+
+            "constant_score": {
+
+              "filter": {"term":{"id.keyword": "doc_d"}},
+
+              "boost": 10000
+
+            }
+
+          },
+
+          {"match_all": {}}
+
+        ]
+
+      }
+
+  },
+
+  "rescore": [
+
+    {
+
+      "query": {
+
+        "rescore_query":{
+
+          "match_phrase":{
+
+            "body":{
+
+              "query": "Fox jumped"
+
+            }
+
+          }
+
+        },
+
+        "query_weight": 1.0,
+
+        "rescore_query_weight": 2.0
+
+      },
+
+      "window_size": 2
+
+    },
+
+    {
+
+      "query": {
+
+        "rescore_query":{
+
+          "function_score":{
+
+            "field_value_factor": {
+
+              "field": "price",
+
+              "missing": 1
+
+            }
+
+          }
+
+        },
+
+        "query_weight": 1.0,
+
+        "rescore_query_weight": 4.0
+
+      },
+
+      "window_size": 1
+
+    }
+
+  ]
+
+}
+
+
+You’ll notice the syntax here under the “bool” “should” clause is different from the premium X-Pack Pinned Query feature.  All we are doing here is making sure doc_d has a really high score (it’s a pretty safe bet that 10,000 here is going to be higher than all other scores) so that it appears at the top of the results. This is a somewhat hacky approach, but it gets the job done.
+
+Reranking through Rules, Scripts and Custom Scoring
+We can generalize from pinning documents, a very fine-grained type of rule, to the more general case of reranking results by rules. OpenSearch supports scripting in a variety of places, including in the Script and Script Score queries, both of which come with a number of prebuilt scoring options.  You can also re-rank results outside of your search engine, but there are benefits to doing it inside the engine. Staying inside the engine optimizes access to the data as it’s being processed, which saves you from having to perform extra passes over it. Bear in mind that scripting will slow down your scoring, and managing scripts can get unwieldy if you are not careful.
+
+👀 Pro Tip: Rules engines are great until they are not! If you build one, make sure you do the following:
+
+Employ version control and make it easy to roll back, validate, and attribute all rules that make it to production.
+
+Make it easy to test rules and limit their damage.
+
+Capture key metadata about who created the rule and when.  Consider giving all rules an end of life, or require them “to earn their keep” in order to stay true.  
+
+Track and log what rules trigger and why. We can’t tell you the number of times we’ve seen a wasteland of dead rules that no one will remove because they don’t know what they do, and they are afraid to break the system.
+
+OpenSearch’s scripting is built on Painless, a purpose-built scripting language designed for Elasticsearch. Let’s try out a few script scoring queries as a way to show some examples of rules, scripts, and custom scoring.  Follow along in altering_results.dev.
+
+Let’s start by replacing our function to rescore based on price with a script (this is a common theme in search, there is often more than one way to do something), but only for doc_a:
+
+
+# Script score on price for doc a
+
+POST search_fun_test/_search
+
+{
+
+  "query": {
+
+      "match_all": {}
+
+  },
+
+  "rescore": [
+
+    {
+
+      "query": {
+
+        "rescore_query":{
+
+          "function_score":{
+
+            "script_score": {
+
+              "script":{
+
+                "source": """
+
+                if (doc['id.keyword'].value == "doc_a"){
+
+                  return doc.price.value;
+
+                }
+
+                return 1;
+
+                """
+
+              }
+
+            }
+
+          }
+
+        },
+
+        "query_weight": 1.0,
+
+        "rescore_query_weight": 1.0
+
+      },
+
+      "window_size": 10
+
+    }
+
+  ]
+
+}
+
+
+
+Results:
+
+
+"hits" : [
+
+      {
+
+        "_index" : "search_fun_test",
+
+        "_type" : "_doc",
+
+        "_id" : "doc_a",
+
+        "_score" : 6.99,
+
+        "_source" : {
+
+          "id" : "doc_a",
+
+          "title" : "Fox and Hounds",
+
+          "body" : "The quick red fox jumped over the lazy brown dogs.",
+
+          "price" : "5.99",
+
+          "in_stock" : "true",
+
+          "category" : "childrens"
+
+        }
+
+      },
+
+      {
+
+        "_index" : "search_fun_test",
+
+        "_type" : "_doc",
+
+        "_id" : "doc_b",
+
+        "_score" : 2.0,
+
+        "_source" : {
+
+          "id" : "doc_b",
+
+          "title" : "Fox wins championship",
+
+          "body" : "Wearing all red, the Fox jumped out to a lead in the race over the Dog.",
+
+          "price" : "15.13",
+
+          "in_stock" : "true",
+
+          "category" : "sports"
+
+        }
+
+      },
+
+      {
+
+        "_index" : "search_fun_test",
+
+        "_type" : "_doc",
+
+        "_id" : "doc_c",
+
+        "_score" : 2.0,
+
+        "_source" : {
+
+          "id" : "doc_c",
+
+          "title" : "Lead Paint Removal",
+
+          "body" : "All lead must be removed from the brown and red paint.",
+
+          "price" : "150.21",
+
+          "in_stock" : "false",
+
+          "category" : "instructional"
+
+        }
+
+      },
+
+      {
+
+        "_index" : "search_fun_test",
+
+        "_type" : "_doc",
+
+        "_id" : "doc_d",
+
+        "_score" : 2.0,
+
+        "_source" : {
+
+          "id" : "doc_d",
+
+          "title" : "The Three Little Pigs Revisted",
+
+          "price" : "3.51",
+
+          "in_stock" : "true",
+
+          "body" : "The big, bad wolf huffed and puffed and blew the house down. The end.",
+
+          "category" : "childrens"
+
+        }
+
+      }
+
+    ]
+
+
+In these results, doc_a gets a score of price (5.99) + 1 (due to the match_all score) = 6.99.  Everything else gets a score of 1 (match_all score) + 1 (the non “doc_a” case in the script) = 2.
+
+In many search applications, using features like sales rank (e.g., popularity) is a pretty powerful way of returning higher quality results in query-independent ways, even though it can sometimes feel like we should simply be sorting our results by sales rank instead of boosting by it. We can improve this approach by finding smarter ways to blend the values from the documents into the score. Machine learning, of course, can do this at scale, based on lots of data, but sometimes there are simple things we can do by hand.
+
+For instance, when it comes to recency, not all amounts of time are the same.  Generally speaking, content from the last hour is better than the last day, which is better than the last week, which is better than the last month and so on.  In other words, recency isn’t linear in the amount of time. If you are a “cheap travel” site you might want to favor low cost items, whereas if you are a luxury goods site, you probably want just the opposite!
+
+The Script Score query allows us to model these types of hand-tuned strategies using decay functions.  Since we don’t have dates on our toy documents, let’s see what our results  look like when we use price to decay differently for low-cost versus high-cost items.
+
+
+# Boost low cost items:
+
+POST search_fun_test/_search
+
+{
+
+  "query": {
+
+      "match_all": {}
+
+  },
+
+  "rescore": [
+
+    {
+
+      "query": {
+
+        "rescore_query":{
+
+          "function_score":{
+
+            "functions":[
+
+              {
+
+                  "exp": {
+
+                    "price":{ 
+
+                      "origin": "0",
+
+                      "scale": "4",
+
+                      "decay": "0.3"
+
+                    }
+
+                }
+
+              }
+
+              ]
+
+          }
+
+        },
+
+        "query_weight": 1.0,
+
+        "rescore_query_weight": 1.0
+
+      },
+
+      "window_size": 10
+
+    }
+
+  ]
+
+}
+
+
+# Boost high cost items:
+
+POST search_fun_test/_search
+
+{
+
+  "query": {
+
+      "match_all": {}
+
+  },
+
+  "rescore": [
+
+    {
+
+      "query": {
+
+        "rescore_query":{
+
+          "function_score":{
+
+            "functions":[
+
+              {
+
+                  "exp": {
+
+                    "price":{ 
+
+                      "origin": "150",
+
+                      "scale": "40",
+
+                      "decay": "0.3"
+
+                    }
+
+                }
+
+              }
+
+              ]
+
+          }
+
+        },
+
+        "query_weight": 1.0,
+
+        "rescore_query_weight": 1.0
+
+      },
+
+      "window_size": 10
+
+    }
+
+  ]
+
+}
+In each of these examples, we use an exponential decay function anchored at an origin (zero for cheap, 150 for “expensive”), and then use an exponential decay as prices move further away.  Try out some of your own values to get a better sense for how this decay works. What happens if you use a different decay function?  What happens if you write your own scoring function?
+
+❗️Important: Only you and your team can decide the best way to use query-independent values like rank or price, etc.  We can show you how to use them in search, but it’s up to you to decide how much they matter for your situation.  This holds true even with machine learning models – Just because something can be a feature in your model, doesn’t mean it should be a feature.
+
+
+By now, you should have a pretty good idea of how you can alter results using the content and features of the engine, including indexing, querying, and scoring. You may also have the feeling by now that there are a lot of levers available to you, and a lot of them seem to have “magic numbers” attached to them.  For instance, you may be wondering why we picked 10,000 for our boost value in the pinned query example. Or where that 0.3 decay comes from. We’d like to say they came from our many years of experience in the field, but the truth is that 10,000 was an arbitrarily high number that we knew no other result would beat, and 0.3 was selected through trial and error combined with the smell test on the results. Nothing particularly magical about that, right?  This underscores why machine learning can be so valuable.  We came up with these examples by creating a custom scoring function based on a small amount of data. Machine learning does this at scale, on way more data than you could hope to digest manually. If you’d like to see this in action by applying machine learning to learn our ranking function instead of guessing at it, be sure to check out our 4-week Search with Machine Learning course.

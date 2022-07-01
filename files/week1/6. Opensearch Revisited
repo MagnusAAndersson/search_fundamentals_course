@@ -1,0 +1,626 @@
+OpenSearch Revisited
+Earlier in our content, we took a quick tour of OpenSearch by indexing, searching and aggregating some toy data. In that section, we glossed over a number of things about our data and the way OpenSearch processes it. Let’s fix that by revising indexing, querying and aggregations, but now armed with more knowledge about text analysis and the basics of how an index works and how queries are scored. Let’s also switch from using the handy, albeit limited, Dev Tools in the Dashboards UI and leverage Logstash for indexing and write some code using Python and the OpenSearch Python client for querying and aggregations. Both of these tools will play key parts in your projects for the next 4 weeks.
+
+OpenSearch with Python in Gitpod Setup
+For this section, we are going to use a Python Virtual Environment (we use pyenv and pyenv-virtualenv) and the Python REPL on the command line in our Gitpod terminal and the DevTools UI when convenient. Your Gitpod browser should look something like:
+
+
+
+Each weekly project will have its own Pyenv setup. Let’s see what this looks like by creating one for this section of our content. At the command prompt in your Gitpod terminal, run:
+
+    > pyenv activate search_fundamentals
+You should now have a new Python virtualenv using Python 3.9.7 active and it should have the OpenSearch Python client library available for use. We are going to work in the Python REPL for purposes of illustration, but you may wish to view and run the code located at opensearch_week1_toy.py. Launch the REPL by entering the following in your Gitpod terminal:
+
+    > ipython
+You should see something like:
+
+
+
+Let’s start by establishing a connection between OpenSearch and our Python client and do some basic health checks. In the REPL, paste in the following:
+
+from opensearchpy import OpenSearch
+import json
+host = 'localhost'
+port = 9200
+auth = ('admin', 'admin') # For testing only. Don't store credentials in code.
+
+\# Create the client with SSL/TLS enabled, but hostname and certification verification disabled.
+client = OpenSearch(
+    hosts = [{'host': host, 'port': port}],
+    http_compress = True, \# enables gzip compression for request bodies
+    http_auth = auth,
+    \# client_cert = client_cert_path,
+    \# client_key = client_key_path,
+    use_ssl = True,
+    verify_certs = False,
+    ssl_assert_hostname = False,
+    ssl_show_warn = False,
+)
+
+\# Do a few checks before we start indexing:
+print(client.cat.health())
+print(client.cat.indices())
+
+\# If you still have your documents from the Dev Tools test, we should be able to check them here:
+print(client.cat.count("search_fun_test", params={"v":"true"}))
+A few things to note about this code:
+
+WE ARE DELIBERATELY BYPASSING SECURITY OTHER THAN BASIC AUTHENTICATION. DO NOT DO THIS IN THE REAL WORLD. ❌
+The “cat” REST endpoint in OpenSearch is designed to provide a human-readable interface to the engine and provides a number of helper endpoints for exploring an OpenSearch cluster. Take a moment to familiarize yourself with them via the documentation and by trying them out in the REPL like we did here with “health”, “indices” and “count”.
+The OpenSearch python wrapper is just that, a wrapper around the OpenSearch REST API. As you can see by the last print statement, parameters are often passed simply as strings and not as Python objects.
+If you deleted the “search_fun_test” index earlier, you will get an error when running the “print(client.cat.count("search_fun_test", params={"v":"true"}))” command. Either re-create the index by running the dev_tools_class_example.dev indexing commands or ignore the error and move on!
+The OpenSearch website only has basic information about the Python client APIs. We recommend you refer to either the Elastic 7.10.1 documentation on Read The Docs or the source code.
+At this point, you should be assured that you have an up and running OpenSearch cluster and that it is in reasonable health, so let’s index some content!
+
+Indexing
+Creating a search index starts with ingesting and indexing the documents that users will be able to search for. Indexing is also where we make decisions about text analyzers and field mappings. How you choose to index in your application will depend on a variety of factors directly related to your business logic and requirements. We highly recommend you don’t reinvent content ingestion if you don’t have to, as it is often cumbersome and error prone at scale, whereas tools like Logstash have been tested and proven in real world scenarios time and time again.
+
+In our earlier Dev Tools example, we implicitly created the index “search_fun_test”. Let’s make this explicit by creating the index with a single non-default setting:
+
+# Create an index with non-default settings.
+index_name = 'search_fun_revisited'
+index_body = {
+  'settings': {
+    'index': {
+      'query':{
+          'default_field': "body"
+      }
+    }
+  }
+}
+
+response = client.indices.create(index_name, body=index_body)
+print('\nCreating index:')
+print(response)
+After running this in the REPL, you should see:
+
+
+
+In this case, we told OpenSearch that, for this index, if a query comes in without an explicitly specified field, as in “_search?q=jumped”, then use “body” as the default field, which effectively turns the search into “_search?q=body:jumped”. See the create-index documentation for all of the supported settings available if you are curious to learn more.
+
+Next, let’s add our four documents from earlier, but spice them up with a few more fields:
+
+# Add our sample document to the index.
+docs = [
+    {
+        "id": "doc_a",
+        "title": "Fox and Hounds",
+        "body": "The quick red fox jumped over the lazy brown dogs.",
+        "price": "5.99",
+        "in_stock": True,
+        "category": "childrens"},
+    {
+        "id": "doc_b",
+        "title": "Fox wins championship",
+        "body": "Wearing all red, the Fox jumped out to a lead in the race over the Dog.",
+        "price": "15.13",
+        "in_stock": True,
+        "category": "sports"},
+    {
+        "id": "doc_c",
+        "title": "Lead Paint Removal",
+        "body": "All lead must be removed from the brown and red paint.",
+        "price": "150.21",
+        "in_stock": False,
+        "category": "instructional"},
+    {
+        "id": "doc_d",
+        "title": "The Three Little Pigs Revisted",
+        "price": "3.51",
+        "in_stock": True,
+        "body": "The big, bad wolf huffed and puffed and blew the house down. The end.",
+        "category": "childrens"}
+]
+
+for doc in docs:
+    doc_id = doc["id"]
+    print("Indexing {}".format(doc_id))
+    response = client.index(
+        index=index_name,
+        body=doc,
+        id=doc_id,
+        refresh=True
+    )
+    print('\n\tResponse:')
+    print(response)
+
+# Verify they are in:
+print(client.cat.count(index_name, params={"v": "true"}))
+Your results should look like:
+
+
+
+You may have noticed here, we add an “id” field to the document explicitly whereas in our Quick Start example we set the id when we made the REST call. We are still setting the ID on the underlying REST call via the “id=doc_id” input parameter, but now have it additionally in the document itself. This is primarily for our own convenience in the for loop. All OpenSearch needs is the “id=doc_id” bit.
+
+At this point, we have the same (besides a few new fields) documents using the same default settings, which also means we will have the same issues we had above in the Quick Start: we can only exact match on words and we get whatever OpenSearch thinks we should get for aggregation fields. Let’s remedy these issues by explicitly mapping our content fields to appropriate data types and choosing our text analysis approaches.
+
+As an aside: it’s great for a search engine to provide sensible “it just works” default behavior, and this is one of the selling points of Elasticsearch as a platform. But it’s even better for you to explicitly specify your configuration so that you know you are making informed choices and aren’t caught by unpleasant surprises. No platform can anticipate all of the ways an application might want to use data, and you will inevitably discover that a “sensible” default isn’t at all sensible for your intended use case. Both of us instructors have seen numerous issues in production systems where the treatment of data was either left to the engine or chosen poorly. Be intentional with your data mapping! You can always override your configuration or perform other computations at runtime if you need to.
+
+Indexing Performance: Bulk Indexing
+As you might imagine, in the real world, passing one document at a time to a search engine can be a slow process. In fact, most search engines these days perform much better when you index documents in bulk by sending many “over the wire” at once. OpenSearch’s Python client supports bulk index via the bulk method, which takes an array of documents. The bulk method can be imported into your Python script as:
+
+    from opensearchpy.helpers import bulk
+And used (see opensearch_bulk_index.py):
+
+    from opensearchpy import OpenSearch
+    from opensearchpy.helpers import bulk
+    … # connection boilerplate to create client
+index_name = 'search_fun_bulk'
+index_body = {
+    'settings': {
+        'index': {
+            'query': {
+                'default_field': "body"
+            }
+        }
+    }
+}
+
+client.indices.create(index_name, body=index_body)
+# Add our sample document to the index.
+docs = [
+    {
+        "id": "doc_a",
+        '_index': index_name,
+        "title": "Fox and Hounds",
+        "body": "The quick red fox jumped over the lazy brown dogs.",
+        "price": "5.99",
+        "in_stock": True,
+        "category": "childrens"},
+    {
+        "id": "doc_b",
+        '_index': index_name,
+        "title": "Fox wins championship",
+        "body": "Wearing all red, the Fox jumped out to a lead in the race over the Dog.",
+        "price": "15.13",
+        "in_stock": True,
+        "category": "sports"},
+    {
+        "id": "doc_c",
+        '_index': index_name,
+        "title": "Lead Paint Removal",
+        "body": "All lead must be removed from the brown and red paint.",
+        "price": "150.21",
+        "in_stock": False,
+        "category": "instructional"},
+    {
+        "id": "doc_d",
+        '_index': index_name,
+        "title": "The Three Little Pigs Revisted",
+        "price": "3.51",
+        "in_stock": True,
+        "body": "The big, bad wolf huffed and puffed and blew the house down. The end.",
+        "category": "childrens"}
+]
+
+bulk(client, docs)
+
+print(client.cat.count(index_name, params={"v": "true"}))
+Notice that our documents now contain the _index meta field, which tells OpenSearch where to index the documents to once received from the client.
+
+👀 NOTE: The more documents you buffer, the more memory is consumed on both the client and server side, so in the real world, you will need to experiment with buffer sizes. Also, keep in mind that if you have errors when sending in bulk, you may have some extra work to do to parse and fix those errors.
+
+Mapping data for smarter search
+In OpenSearch it is possible to explicitly define the data types and text analysis via what are called Field Mappings or simply Mappings. You can read more about Mappings on the create index documentation (scroll down) or by going to the Elastic website on Mapping and Text Analysis.
+
+👀 Note: we will regularly refer you to the documentation for Elastic 7.10, from which OpenSearch forked, as the Elastic documentation is more complete than OpenSearch’s. We will do our best to call this out, as the two systems, while very closely related, do not always coincide.
+
+To understand mappings, let’s first look at what OpenSearch’s default mapping is by fetching the index settings:
+
+    print(client.indices.get_mapping(index_name))
+This looks like:
+
+
+
+The output of that is a bit hard to read, so let’s see what it looks like back in the Dev Tools:
+
+“GET /search_fun_revisited” yields (cropped for display):
+
+     "mappings" : {
+      "properties" : {
+        "body" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "category" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "id" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "in_stock" : {
+          "type" : "boolean"
+        },
+        "price" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "title" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        }
+      }
+    }
+In the example above, we can see a mapping is a JSON map containing a number or submaps, one per field we defined (e.g. “in_stock”). A few other things to notice:
+
+We can now see where the “category.keyword” field came from. OpenSearch calls these multi-fields. We can also see all fields except “in_stock” have it. OpenSearch automatically adds this “keyword” field type to every field because “text” field types aren’t able to be aggregated efficiently due to the underlying data structures used. The “in_stock” field is a boolean, so it already lends itself well to aggregations since it can only ever have two values. More on multi-fields in a moment.
+The keyword fields all have the “ignore_above” property set to 256, meaning OpenSearch will not index any values that have more than 256 characters. This means those values will not show up in any aggregations or searches.
+The “price” field was chosen to be “text” even though we only ever passed in numeric values. This means we may get unexpected results from sorting or range filtering, since the values will be treated like strings rather than numbers.
+In a well-designed index structure, it is common – and often recommended – to use multiple fields to represent the same piece of document content. While this may strike you as wasteful, you will often find that indexing the same content multiple ways allows you to query that content more effectively. For example, you may choose to have a field you index using multiple analyzers (e.g.. with and without stemming) to support querying with or without sensitivity to stemming variation. Creating multiple fields is also helpful if you want to use a field for autocompletion, search-as-you-type, or joins. Take a moment to familiarize yourself with all the field types in the Elastic documentation.
+
+👀 Note: If you change a field mapping after indexing, you will need to reindex. OpenSearch does not go back through and reapply the analyzer to your content until you reindex.
+
+At this point, we’ve mentioned that the “text” field uses the Standard Analyzer, but we haven’t said what that is or what it does. In Lucene-based engines, Analyzers consist of three things: 1) zero or more character filters, 2) a tokenizer, and 3) zero or more token filters. Character filters can be used to strip things like HTML tags from text. Tokenizers split text into individual tokens. Token Filters then add, update, or delete those tokens before handing them off to Lucene.
+
+Unfortunately, as of this writing, OpenSearch does not have an API for returning the default Analyzer settings, although it does return them in the index settings if they have been customized. We can, however, see their definitions via the Elastic documentation in the screenshot below:
+
+
+
+The Standard Tokenizer is a Lucene tokenizer that splits text into tokens based on UNICODE. It is suitable for most languages out of the box, but may have trouble handling the subtleties of some languages, especially those who don’t use whitespace to delineate words. The lowercase filter does just what it says, it lowercases all characters. Stop words can be filtered out by customizing the analyzer and including your own list of stop words. As you can see, there is no stemming of content out of the box, which explains why we weren’t able to match “dog” and “dogs” earlier. To see all the built-in analyzers, you should also check the Elastic documentation. As part of our week 1 project, you will configure the use of a different analyzer and maybe even want to use a custom analyzer.
+
+Let’s revisit our indexing process by first setting up a mapping using the EnglishAnalyzer for our “title” and “body” fields and choose a better type for our “price” field:
+
+index_name = 'search_fun_revisited_custom_mappings'
+index_body = {
+    'settings': {
+        'index': {
+            'query': {
+                'default_field': "body"
+            }
+        }
+    },
+    "mappings": {
+        "properties": {
+            "title": {"type": "text", "analyzer": "english"},
+            "body": {"type": "text", "analyzer": "english"},
+            "in_stock": {"type": "boolean"},
+            "category": {"type": "keyword", "ignore_above": "256"},
+            "price": {"type": "float"}
+        }
+    }
+}
+
+client.indices.create(index_name, body=index_body)
+
+
+
+for doc in docs:
+    doc_id = doc["id"]
+    print("Indexing {}".format(doc_id))
+    response = client.index(
+        index=index_name,
+        body=doc,
+        id=doc_id,
+        refresh=True
+    )
+    print('\n\tResponse:')
+    print(response)
+In this code, we are creating a new index, similar to our old one, but with the updated mappings. We can confirm our new English stemming analyzer worked by issuing two queries in the Dev Tools UI, one to the old index and one to the new:
+
+        GET search_fun_revisited/_search?q=body:dogs
+        GET search_fun_revisited_custom_mappings/_search?q=body:dogs
+As you would expect, “search_fun_revisited” returns one doc:
+
+
+
+And “search_fun_revisited_custom_mappings” returns two:
+
+
+
+At this point, we’ve covered how to explicitly create an index with custom settings and mappings. We’ve learned about field types and how text analysis is implemented in OpenSearch, and we’ve seen these things in action using the OpenSearch Python client. 🙌 Reminder: if you have any questions, please post them in our Slack channel! If you are confused by something, there are likely other students who are similarly confused.
+
+Querying
+Now that we have our content indexed and we have some richer field structures, let’s start querying them using our Python client. OpenSearch queries can be fairly complex data structures thanks to the support of a sophisticated Query Domain Specific Language that allows you to mix-and-match a variety of query types. (See the Elastic documentation for a full list of query types.) Let’s begin to understand how querying works by looking at a few examples. We’ve been querying for “dogs” quite a bit, so let’s continue by looking at our favorite query in Python terms, which you can tryout in the Python REPL on the Gitpod terminal:
+
+q = 'dogs'
+index_name = 'search_fun_revisited_custom_mappings'
+query = {
+  'size': 5,
+  'query': {
+    'multi_match': {
+      'query': q,
+      'fields': ['title^2', 'body']
+    }
+  }
+}
+
+client.search(
+    body = query,
+    index = index_name
+)
+Your results, albeit hard to read, should look something like:
+
+
+
+There are a couple of things in this example to highlight that are different from what we’ve done before: We passed in a Python dictionary of dictionaries, as opposed to a simple query string (e.g. “q=dogs”). We are using a new way of querying called “multi_match” which allows us to query across multiple fields (e.g. title, body). The field “title” is twice as important for matching in this query compared to body, thanks to the “^2” factor in the “fields” attribute. There is nothing special about 2 here other than we chose it to highlight what can be done. Hand-tuned relevance often involves trial and error to figure out these boost factors. Try out some different values to see how they affect the results.
+
+Next, let’s submit a phrase query:
+
+q = 'fox dog'
+query = {
+  'size': 5,
+  'query': {
+    'match_phrase': {
+      'body': {"query": q}
+    }
+  }
+}
+
+client.search(
+    body = query,
+    index = index_name
+)
+This yields:
+
+
+
+Notice that we didn’t return any results! This is due to phrase queries requiring that the tokens fox and dog occur next to each other. (👀 Recall our earlier discussion about capturing positional information? That’s how OpenSearch and Lucene know how to match phrase queries.) There are a number of approaches we can take to solving matching multiple terms in a query. For starters, we can use a boolean query (or one of it’s more advanced variants like “dis_max”) and simply look for documents that have both terms (equivalent to ANDing or ORing the two terms together) or we can execute what is called a “sloppy” phrase query:
+
+#try a phrase query with slop
+q = 'fox dog'
+query = {
+  'size': 5,
+  'query': {
+    'match_phrase': {
+      'body': {"query": q, "slop":10}
+    }
+  }
+}
+
+client.search(
+    body = query,
+    index = index_name
+)
+This query says “find all documents where the terms “fox” and “dog” occur within 10 positions of each other.” Running this yields:
+
+
+
+This type of phrase query is more expensive than a boolean AND, but it does have the benefit that the closer the terms in the phrase are to each other, the higher they will score.
+
+Let’s do two more types of queries and then move on: filtering queries and function queries. Filter queries are non-scoring queries that reduce the result set by simply determining what documents match the filter query, and function queries use the values within a field as a scoring feature. Filter queries can be used to implement features like faceting or “search within a search”. Function queries allow us to do things like boost documents based on some external value like price, inventory or popularity. Let’s combine these two ideas into a single bigger query by finding all documents in our example set where the category is “childrens” and we boost by the price:
+
+# try a match all query with a filter and a price factor
+query = {
+    'size': 5,
+    'query': {
+        "function_score": {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"match_all": {}}
+                    ],
+                    "filter": [
+                        {"term": {"category": "childrens"}}
+                    ]
+                }
+            },
+            "field_value_factor": {
+                "field": "price",
+                "missing": 1
+            }
+        }
+    }
+}
+
+client.search(
+    body=query,
+    index=index_name
+)
+The results:
+
+
+
+Notice in these results that the score is equivalent to the price! That’s because we issued a query where the only scoring factor was the function value score. Both the “match_all” and the filter query you see in the example here are what are called non-scoring queries. This is a very common pattern in search applications and often has very positive performance implications. Can you think of some use cases in your own application where it might come in handy? 🤔
+
+👀 Aside: If you only need a field for ranking, you might consider using the Rank Feature field and query for improved performance.
+
+Before we leave querying, take time to familiarize yourself with the many different query types you can issue to OpenSearch via the documentation. Also note one really important aspect of the Elastic query DSL: queries are composable in many places! That is, you can often build a more sophisticated query by adding and grouping different types of queries via things like the “bool” query. You can also mix and match many of the other query types like geo, shapes, spans, and terms!
+
+Paging and Scrolling through Results
+Many search applications allow you to “page” through search results, usually 10 or 20 items at a time. This can be implemented in OpenSearch using the from and size query parameters when issuing your query. The from parameter tells OpenSearch where to start the results and the size parameter tells OpenSearch how many results to return. For example, the following snippet fetches the next 10 results, starting at the 5th one:
+
+GET bbuy_products/_search
+{
+"size": 10,
+"from": 5,
+"query": {
+    "match_all": {}
+  }
+}
+👀 NOTE: We are using the index we created for the Week 1 project here (bbuy_products), since it has 1.27 million documents in it, so it better demonstrates the use case.
+
+Paging comes with two important caveats you should be aware of:
+
+Paging deeply into a set of results can have a significant impact on performance. OpenSearch (and many other engines) limit the depth of which you can fetch to the top 10,000 results.
+Paging using from and size is stateless. If your index changes between the time a user does their query and the time they choose to go to the next page of results for that query, they may get different results! In most cases, most users won’t notice, but it may mean that a document that appeared on the prior page was bumped down to the current page and they will see that document twice.
+For both of these cases, you can use OpenSearch’s scroll function, both to give consistent paging and to retrieve an unlimited number of results. Scrolling is a stateful feature that keeps a search context open (think of it as a snapshot of the index at that point in time) for use. As you might imagine, keeping a lot of states laying around can also cause performance issues, so be sure to really confirm your need for it before you implement it.
+
+To see scroll in action, add a scroll parameter to your request:
+
+GET bbuy_products/_search?scroll=10m
+{
+"size": 100,
+"query": {
+    "match_all": {}
+  }
+}
+This will return, along with your usual results, a _scroll_id that you can then pass in with future results. Here’s the abbreviated response:
+
+
+
+To then actually scroll and get the next 1000 results, we need to switch endpoints to _search/scroll and pass in our scroll_id and the scroll parameter from earlier:
+
+GET _search/scroll
+{
+"scroll": "10m",
+"scroll_id" : "FGluY2x1ZGVfY29udGV4dF91dWlkDXF1ZXJ5QW5kRmV0Y2gBFkRzWnhEMk9EU3RpUW1sU0xKUUJ1U1EAAAAAAAAARxYxQ3FMTnd2TFFkT1psODYtZGZPdmxB"
+}
+Give this a try with your own scroll_id!
+
+Sorting Results
+Like relational databases, search engines also support sorting by values in a document, not just the score. For example, in an ecommerce application, customers may want to sort search results by price instead of by relevance, or in enterprise search they may want to sort by the time a document was last updated.
+
+To sort our results by something besides their relevance score, we simply need to pass in a “sort” payload with our request, as in (see sorting_week1.dev for index creation and ingestion):
+
+GET search_fun_test/_search
+{
+"size": 10,
+"query": {
+    "match_all": {}
+  },
+  "sort": [
+    {
+      "price": {
+        "order": "asc"
+      }
+    }
+  ]
+}
+In this example, we are sorting by price in an ascending manner. Notice that the sort parameter is an array, so you can pass in multiple sort parameters (e.g. secondary, tertiary) to break ties.
+
+Speaking of arrays, if your field is actually an array, you can tell OpenSearch to use the first, last, average or other modes on the array. See the documentation for more details.
+
+Finally, when it comes to sorting, keep in mind your field mappings! Some field types will be faster to sort on (numbers) and some slower (strings).
+
+Aggregations
+Last, but not least, on our tour of OpenSearch is how to use aggregations. Let’s dive in by looking at a few types of aggregations (Elastic’s docs are, as usual, more complete) using our Python client.
+
+To start, let’s do some basic bucketing/counting of fields and their terms:
+
+query = {
+    'size': 0,
+    'query': {
+        "match_all": {}
+    },
+    'aggs': {
+        "category": {
+            "terms": {
+                "field": "category",
+                "size": 10,
+                "missing": "N/A",
+                "min_doc_count": 0
+            }
+        }
+    }
+}
+
+response = client.search(
+    body=query,
+    index=index_name
+)
+print('\nSearch results:')
+print(json.dumps(response, indent=4))
+
+
+In this example, you see a few things in action:
+
+We are executing a simple match_all query which means our aggregations will be calculated over all documents. We told OpenSearch not to return any hits (size=0). These two things together are a common pattern in aggregation-driven applications like dashboards.
+The “terms'' aggregation creates a bucket for each unique term in this field. In our case, there are only 3 unique terms, so this is an inexpensive calculation. Higher cardinality fields (e.g. an “author” field for an index of all books in the world”) will be more expensive to aggregate on.
+Even though we aren’t returning any hits, the query is still executed to generate a result set against which to calculate aggregations.
+We specified “missing” so we could find out how many documents don’t have a value set for this field. This is a great way to check data quality – specifically field coverage – on your content. In our examples, all documents have a category field filled in.
+Terms aggregations are one of the main workhorses of many search websites, but there are many other types of aggregations that can be done. Take a moment to familiarize yourself with them via the Elastic documentation. Let’s finish our look at aggregations by working through how we might aggregate the “price” field.
+
+Let’s start by doing a “terms” aggregation:
+
+query = {
+    'size': 0,
+    'query': {
+        "match_all": {}
+    },
+    'aggs': {
+        "price": {
+            "terms": {
+                "field": "price",
+                "size": 10,
+                "min_doc_count": 0
+            }
+        }
+    }
+}
+
+response = client.search(
+    body=query,
+    index=index_name
+)
+print('\nSearch results:')
+print(json.dumps(response, indent=4))
+This results in:
+
+
+
+Besides the floating point overflow as an obvious issue here, terms aggregation for something like a price field isn’t all that useful unless we wanted to find all the products that had the same price, which might be helpful in data quality use cases, but likely isn’t useful for someone wanting to buy something. We can do better by using OpenSearch’s built-in range aggregation:
+
+query = {
+    'size': 0,
+    'query': {
+        "match_all": {}
+    },
+    'aggs': {
+        "price": {
+            "range": {
+                "field": "price",
+                "ranges": [
+                    {
+                        "to": 5
+                    },
+                    {
+                        "from": 5,
+                        "to": 20
+                    },
+                    {
+                        "from": 20,
+                    }
+                ]
+            }
+        }
+    }
+}
+
+response = client.search(
+body = query,
+index = index_name
+)
+print('\nSearch results:')
+print(json.dumps(response, indent=4))
+This results in:
+
+
+
+While we picked arbitrary sized ranges so that we could show different counts in the buckets, you can imagine this type of structure is more useful to users since it groups common price points together. (How might you implement a common ecommerce facet of “$”, “$$”, “$$$” and “$$$$” using ranges?) Notice, also, that for the lower range (less than 5) and the upper range (greater than 20), we left off, respectively, the “from” and the “to” attributes so as to include all prices below and above those values.
+
+Conclusion
+We’ve covered a lot of ground in one week! Before you start the project, give yourself a pat on the back, as you have already learned the basics of how search engines work, observed an engine in action, and even written some code to index your own data and query it. 👏 To help solidify your understanding of this week’s concepts, you may want to take some time to enhance our toy examples. Perhaps try doing some of the following on your own:
+
+Add in some of your own “multi-fields” to index the content in different ways using the Field Mapping settings
+Index some different data types that we didn’t try out, such as latitude and longitude. How would you model searching what stores have what books in our data type?
+Try out some more sophisticated queries that combine several different query types, filters and aggregations.
+As always, you can post questions/comments/reflections in our Slack channel! We would love to hear your takeaways as well as the concepts you are finding more confusing.
+
+Now, when you are ready to move on, let’s put all of this into action by creating a working search driven website using an ecommerce dataset with over one million records, four million user queries, OpenSearch and Python Flask, plus a little bit of homebrewed scaffolding.🤩

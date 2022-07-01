@@ -1,0 +1,451 @@
+Week 1 Project Instructions
+Week 1 Project Instructions
+Dataset
+Setup
+Project Instructions
+Level 1
+Level 2 (Required)
+Level 3 (Optional/Bonus)
+Project Submission
+Project Resources
+This week’s project involves setting up, ingesting, searching, and aggregating our two datasets (described below) into OpenSearch. In this project you will:
+
+Level 1 (Required) 🔥:
+
+Write ingestion code in Python to index our product and query datasets
+
+Create index mappings for both datasets in OpenSearch
+
+Use OpenSearch APIs to create a simple search web application written in Flask
+
+Note: while you don’t have to use our web application for this class, you will need to write code that sits in front of the search engine and can process queries and display results.  All of our worked project examples will use this simple web application sitting in front of OpenSearch.
+
+Also note: you may use Elasticsearch, but we don’t guarantee these examples will work with the latest version of Elasticsearch.
+
+Familiarize yourself with both datasets by performing basic analytics and aggregations on the datasets and display the results.
+
+Level 2 (Required) 🔥🔥:
+
+We’ll discuss relevance and ranking more next week, but for now we want you to get a feel for both the dataset we are using and some of the levers you can use to affect the search experience. In this section, you will investigate and implement different techniques for query parsing, handling phrases, and  leveraging our data to return better results.
+
+Level 3 (Optional) Up for a challenge? 🔥🔥🔥 In this level, add paging or other features to your search results!
+
+Dataset
+
+We will be using the 2012 “Best Buy eCommerce Dataset” from the San Francisco Data Mining Hackathon. While this dataset is quite old at this point (iPad2 anyone?), it contains exactly what we need to teach search and machine learning: a well structured set of documents (in this case products) and, most importantly, a set of query logs containing real world user queries and the documents those users clicked on.
+
+Aside: Query logs often contain PII -- Personally Identifiable Information -- and are therefore often quite difficult to come by on the open internet. The Best Buy dataset is one of the very few datasets available that contain both the original documents and the queries against that dataset.
+
+Setup
+Unfortunately, for the type of search we are doing, we can’t simply install a toy engine in the browser and walk through “hello world”.  We need to stand up and use a few different moving parts to complete our projects. Luckily for us, the two weeks of the class will use the same environment.  To complete this project, you will need to do the following to connect and configure your environment:
+
+FORK the class Github repository to your own Github account.
+
+Setup your base Gitpod instance per the README.
+
+Download the Best Buy Data to your instance.
+
+You will need your Kaggle API token for this step.
+
+If you get stuck on these or are unsure, please ask in our Slack channels.  We don’t want you wasting your valuable time on setup issues.  We are here to help.
+
+Project Instructions
+To help you navigate the codebase, all code you have to edit will be labeled with a comment associated with that step of the project. This does not apply to JSON, since there are no comments allowed in JSON.
+
+As an example, you might see something like:
+
+##### Step 2.c marked in the text below and in the corresponding Python file in the codebase.
+
+Level 1
+For our first level of the project, complete the following tasks:
+
+Create your index settings and field mappings: (note, this step is highly connected to step 2, so you may need to revisit this step as you progress.)
+
+You will need to edit the following file by adding in your own field mappings and index settings: opensearch/bbuy_products.json.
+
+You should have one field mapping entry for every field specified in the XPath filter in index_products.py. (You'll edit index_products.py in step 2). If you decide to add fields to be extracted from the raw content, then add field mappings accordingly.
+
+All fields that are type “text” should also have a “keyword” multi-field.  For example:
+
+
+"color": {
+  "type": "text",
+  "fields": {
+    "keyword": {
+      "type": "keyword",
+      "ignore_above": 256
+    }
+  }
+}
+“name”, “shortDescription”, “longDescription” should all use an analyzer that stems the content.  See the section earlier on Analyzers and “Mapping data for smarter search”.
+
+The “regularPrice” field (or a multi-field variant of it) must support doing numeric range queries and numeric range aggregations.
+
+What you choose for field types are entirely up to you, but we highly recommend you take an iterative approach to field mappings. That is, start by indexing the data using a subset of the content and the default settings.  Then look to see what OpenSearch guessed for mappings and then modify those values accordingly to the requirements above and your insights.  Be sure to refer back in this document for details on field mapping.  Also refer to the Elastic documentation.  You may also find it helpful to look at a few different products in the raw XML being indexed.
+
+In index_products.py implement:
+
+#### Step 2.a: Create a connection to OpenSearch in the get_opensearch() method
+
+#### Step 2.b: Create a valid OpenSearch Document and bulk index 2000 documents at a time using the OpenSearch bulk method by doing the following:
+
+Create an appropriate document and append it to the docs list
+
+For every 2000 documents, ship the docs list to OpenSearch using the bulk API.  
+
+Review index-data.sh for understanding and then execute it:
+
+In the Gitpod Terminal run “./index-data.sh”. 
+To check the running log:
+$ tail -f /workspace/logs/index_products.log
+You should see something like this:
+
+Here is a sample image caption.
+
+
+Hint: You can test out product indexing on a smaller set of files by either copying a few files out of the dataset and using them or modifying the glob.glob call in index_products.py to be more restrictive than *.xml.
+
+A full indexing run on Gitpod may take upwards of 30-40 minutes for the products.
+
+👀 NOTE: Running index-data.sh will also index our query logs, which we will use at the beginning of week 2 and in the week 2 project.
+
+Verify data is successfully indexed using count-tracker.sh or, in Dev Tools:
+
+Command Line: ./count-tracker.sh (Note: count-tracker loops forever, checking the index every 100 seconds.  Hit ctrl-c to exit once the counts don’t change.)
+
+Dev Tools:
+
+GET bbuy_products/_count
+
+GET bbuy_queries/_count
+
+Implement a “simple” (we’ve provided some basic JINJA2/HTML scaffolding and CSS.  Feel free to make it look better!) Python Flask application using the project scaffolding located in the week1 folder. To run the flask app, please refer to the README. Your application must implement:
+
+#### Step 4.a: In the opensearch.py file
+
+Create a connection using the OpenSearch Python client by replacing the line “g.opensearch = None” with an appropriate connection to your OpenSearch instance.
+
+In the search.py file
+
+#### Step 4.b.i: The “create_query()” method. 
+
+Your query must:
+
+Use the “query_string” query parser.
+
+Search across “name”, “shortDescription”, “longDescription”
+
+Use a “phrase_slop” of 3
+
+Filter using the filters supplied by the “process_filters()” method
+
+Have a range aggregation with name “regularPrice” on field “regularPrice” (or multi-field)
+
+Have a terms aggregation with name “department” on the “department” field (or multi-field)
+
+Have a missing aggregation with name “missing_images” on the “image” field (or multi-field)
+
+Turn on the Highlighter for “name”, “shortDescription” and “longDescription”.  Highlighting should already be wired in the UI, so you just need to add the necessary query components.  We didn’t cover highlighting in the class material, so you’ll have to read the docs!
+
+Add support for sorting by “regularPrice” and “name.keyword”.  These should already be wired in the UI and passed in, so you just need to add the necessary query components.
+
+#### Step 4.b.ii: In “query()”, using the query created by “create_query()”, invoke the OpenSearch “search” method by replacing the line “response = None” with an appropriate call to OpenSearch.
+
+
+If you’ve made it this far, congrats! 🎉 Here is an example screenshot of what the instructors default search looks like in all of its design glory:
+
+
+Here is a sample image caption.
+
+
+Anyone feel like buying a “Revenge of the Nerds” VHS tape or a Smallville t-shirt?
+
+Level 2 (Required)
+At this point, you should have a simple, working search user interface with facets on the left, a search box at the top and search results down the middle-right.  Let’s go on a scavenger hunt, to get a sense for both the data and some of the issues that come up in searching
+
+
+In this data set, circa 2011, one of the more popular products at the time was the Apple iPad 2. 
+
+
+Here is a sample image caption.
+
+
+Quaint, right?
+
+Let’s try out some queries and see how things look.  Note, your results may not look exactly like ours, but that’s OK.  Once you see our solution, you should be able to reproduce these results.  You can execute these in your application or via the Dev Tools UI. As a hint for students still working on Level 1 who are reading ahead, our starting set of fields we are searching is configured as: 
+
+
+"fields": ["name^100", "shortDescription^50", "longDescription^10", "department"],
+Let’s try an (almost) exact match: “Apple iPad 2 with WiFI 16gb white”. This yields what we would hope expect.
+
+
+Here is a sample image caption.
+
+
+
+
+
+You might be surprised how many websites’ search function fails to find exact matches, so this first test is a good one to always check on your site. If your application doesn’t return an exact match, make sure you are searching on the “name” field and give it a boost well above the other fields you are matching on.
+
+
+
+
+In the real world, users rarely know exactly what they are looking for, even when they think they do! 🙃 Most of our work in this class will be focused on filling that gap between a user’s intention and the results the engine returns. A much more realistic query for a real world user is “ipad”, “iPad 2”, “Apple iPad 2” or any other variants.  Try out each of those queries.  Here are some of our results:
+
+
+
+
+
+Here is a sample image caption.
+
+
+
+Here is a sample image caption.
+
+
+
+Here is a sample image caption.
+
+
+
+
+
+Nary an actual iPad to be found!  In our baseline testing, the closest we get is the docking station for the Apple iPad 2 and a whole lot of accessories. 
+
+
+
+
+Let’s take a different tact and try filtering.  We know the iPad is a type of computer, so let’s click on the “Computers” Department filter on the left side.
+
+
+Here is a sample image caption.
+
+
+Still no luck!
+
+
+
+
+What else do we know as a user?  Perhaps we can facet by price.  iPads are kind of expensive, so after trying a few different price facets, we finally found them by choosing the “$$$$” range (which maps to the $300-$400 range) we arrive at:
+
+
+Here is a sample image caption.
+
+
+Not exactly an ideal experience, right?  Sure, we eventually got there, but it took a lot of trial and error. Let’s take a step back. Ask yourself: “why are we getting all these “bad” results?”  What makes them bad? They all have the words we searched for, right? 🤔
+
+
+
+
+Take a few minutes to write down 3-5 bullet points of the reasons why the results might be bad based on what you’ve learned so far.  
+
+
+
+
+For this next work, we are going to use the OpenSearch Dev Tools UI, as it is much faster to try out different query types.  You can refer to dev_tools_w1_level2_example.dev to follow along.
+
+
+
+
+First, let’s establish a baseline query to work from:
+
+
+GET bbuy_products/_search
+{
+ "size": 10,
+  "query": {
+      "bool":{
+        "must":[
+            {"query_string": {
+                "query": "\"ipad 2\"",
+                "fields": ["name^100", "shortDescription^50", "longDescription^10", "department"]
+            }}
+        ]     
+      }
+  },
+  "_source": ["productId", "name", "shortDescription", "longDescription", "department", "salesRankShortTerm",  "salesRankMediumTerm", "salesRankLongTerm", "regularPrice", "categoryPath"]
+}
+In our working example, this give us: 
+
+
+Here is a sample image caption.
+
+
+
+
+
+If your results are different, that is OK.  One of the things that strikes us when we look at the results are how many of the top results are accessories (e.g. cases, speakers) for the iPad 2, thus they all mention the words “Apple iPad 2” in them just like the actual Apple iPad 2! While this isn’t quite as bad as the old days of the web and “keyword stuffing”, it doesn’t make our lives any easier.  In fact, it highlights one of the challenges of the scoring based off of tf-idf, which we will discuss in week 2.
+
+
+In your reading of the Elastic docs on the Query DSL, you may have come across a “boosting” query.  
+
+Using the template below, write a boosting query that uses the baseline “query_string” as the positive query.  For the negative query, create a query that will downvote accessories.  To do this, you will find it helpful to read the content for the docs that are being returned by the baseline query and find common patterns.  For instance, in our results above, the phrase “Compatible with Apple iPad” likely means the item is an accessory and not an actual iPad.
+
+
+GET bbuy_products/_search
+{
+ "size": 10,
+  "query": {
+    "boosting": {
+      "positive": {
+#FILL IN
+      },
+      "negative": {
+#FILL IN
+      },
+      "negative_boost": 0.2
+    }
+
+  },
+
+  "_source": ["productId", "name", "shortDescription", "longDescription", "department", "salesRankShortTerm",  "salesRankMediumTerm", "salesRankLongTerm", "regularPrice", "categoryPath"]
+
+}
+
+
+One of our attempts at this yielded:
+
+
+Here is a sample image caption.
+
+
+Another attempt gave us:
+
+
+Here is a sample image caption.
+
+
+Did that feel a bit like “whac-a-mole”?  It did for us too and we never were able to get what we considered good results.  Moreover, such an approach of handpicking terms to add to the query doesn’t scale!  However, it should give you a taste for tuning relevance!
+
+Let’s try one final approach.  If you look at the iPad document we first mentioned at the start of this level via:
+
+
+GET bbuy_products/_doc/2339322  # assuming you used SKU for the ID
+You might notice there are some additional fields we could either search or leverage in our query, especially when you compare to other matching documents that aren’t the actual iPad.  For instance, we could search against the manufacturer or color fields.  We probably could also figure out a way to include the “categoryPath” and “features” fields as well that would be helpful.  You might also notice that this dataset includes sales ranking information, otherwise known as popularity data.  For instance, in our baseline query, the top ranked result has a “salesRankLongTerm” value of 225414 vs 44 for the iPad.  Moreover, the baseline result doesn’t even have a short or medium term ranking, while our iPad has values of 110 and 44. It’s a pretty safe bet that if other people bought a product, our current user may want to as well. Let’s write a query to use this data and see how it turns out!
+
+Write a function query that uses our baseline query and these three factors into account. Your query should:
+
+Have 3 functions (hint: our example in the week’s content only used one, but it can take multiple, see the docs) that use the “field_value_factor” on sales rank.
+
+Set “missing” to 100000000.
+
+Set “modifier” to “reciprocal”.
+
+Set “score_mode” to “avg”.  This defines how the 3 functions will be combined.
+
+Leave “boost_mode” as it’s default of “multiply”.
+
+
+
+You can use the following template:
+
+
+GET bbuy_products/_search
+
+{
+ "size": 10,
+  "query": {
+      "function_score": {
+        "query": {
+           "query_string": {
+                    "query": "\"ipad 2\"",
+                    "fields": ["name^1000", "shortDescription^50", "longDescription^10", "department"]
+            }
+        },
+        "boost_mode": "multiply"
+        "score_mode": "#SETME",
+        "functions": [
+        ]
+      }
+  },
+  "_source": ["productId", "name", "shortDescription", "longDescription", "department", "salesRankShortTerm",  "salesRankMediumTerm", "salesRankLongTerm", "regularPrice"]
+}
+At last!  When we run this, we finally have an actual iPad in the search results!
+
+
+Here is a sample image caption.
+
+
+Even if it is at rank 5, it still is on the front page!
+
+Let’s try one last thing, with the same query that you just built, change the “boost_mode” from “multiply” (the function score and the query score are multiplied) to “replace” (the function score replaces the query score.)  Lo and behold, after doing this, our top two results are iPads!
+
+
+Here is a sample image caption.
+
+
+Of course, this is too good to be true.  Effectively what we are doing is sorting all documents that match our query terms by some combination of popularity.  We could have skipped all of this work and simply sorted by that same combination!  Not really, though, because if all that mattered was popularity in search, we wouldn’t be here in this class!
+
+
+As a last step, change your create_query method to incorporate your best hand tuned query inputs based on your exploration with fields, sales rank, etc.
+
+Don’t worry, though, your efforts are not wasted.  You learned valuable lessons about how to create queries, how to retrieve and examine results and how to hand tune queries.  You also learned how painful tuning relevance can be!  Next week, we’ll cover some additional tools you can build in your application to improve search results.  We, of course, would be remiss if we didn’t also mention we teach another Co:Rise class called “Search with Machine Learning” that will help you automate your relevance tuning using machine learning and your own data!
+
+Level 3 (Optional/Bonus)
+If you are here and interested in tackling some common search 101 problems with your remaining time for the week, below are some ideas to try.  
+
+Add in support for paging through results. This will require you to alter the user interface.
+
+Create OpenSearch/Kibana dashboards to view and navigate the two indexes
+
+Implement an algorithm for handling no results or low quality queries using query rewriting techniques.
+
+Implement an algorithm for doing query synonym expansion (hint: your search analyzer can be different from your content analyzer) or pseudo-relevance feedback/”more like this”
+
+See “The same, but different: Boosting the power of Elasticsearch with synonyms”
+
+See also Rocchio Relevance Feedback.
+
+
+
+NOTE: We do not have examples of these in action, but are happy to discuss and review your work on any of these topics.
+
+Project Submission
+To assess your project work, you should be able to answer the following questions:
+
+Do your counts match ours?
+
+Number of documents in the Product index: 1,275,077
+
+Number of documents in the Query Log index: 1,865,269
+
+There are 16,772 items in the “Computers” department when using a “match all” query (“*”) and faceting on “department.keyword”.
+
+Number of documents missing an “image” field: There is some discrepancy here we are investigating depending on how you query your index.  The instructors solution yields 682 results.  However, a "match_all" aggregation yields 1303.
+
+What field types and analyzers did you use for the following fields and why?
+
+Name
+
+shortDescription and longDescription
+
+regularPrice
+
+Compare your Field mappings with the instructors.  Where did you align and where did you differ?  What are the pros and cons to the different approaches?
+
+Were you able to get the “ipad 2” to show up in the top of your results?  How many iterations did it take for you to get there, if at all? (we’re not scoring this, of course, it’s just worth noting that hand tuning like this can often be quite time consuming.)
+
+🎉
+Project submitted — nice job!
+Project link here
+Do your counts match ours?
+Yes, it does.
+What field types and analyzers did you use for the following fields and why?
+Text and keyword, So you can search for both parts and exact matches. English analyzer. Felt like the natural analyzer to default to.
+Compare your Field mappings with the instructors.  Where did you align and where did you differ?  What are the pros and cons to the different approaches?
+I have not been able to find the instructors mappings
+Were you able to get the “ipad 2” to show up in the top of your results?  How many iterations did it take for you to get there, if at all? (we’re not scoring this, of course, it’s just worth noting that hand tuning like this can often be quite time consuming.)
+In the fine-tuning with positive and negative approach, I was not able to ever get ipad 2 as first result. I did 10+ iterations, but it felt like I deviated more, started to get instruments and things instead of pure ipad accessories, with not as clear-cut wrong categories for those things either. Adding field value factor brought the ipad right up to the top
+<- Edit submission
+Your submission was sent to the course Slack.
+Check for feedback from your code review partners.
+
+See on Slack
+Project Resources
+OpenSearch and Elasticsearch tutorials
+
+Flask and Jinja2 documentation.  See the quickstart and the tutorial to quickly get up to speed.
+
+Data mappings and Field Data Types
+
+Elasticsearch 7.x Cheatsheet

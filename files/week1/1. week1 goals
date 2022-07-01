@@ -1,0 +1,18 @@
+Week 1 Goals
+Week 1 Goals:
+
+LEARN: key concepts of search applications like indexing, querying, relevance and more
+
+LEARN: commonly used OpenSearch APIs
+
+BUILD: a simple ecommerce search application using OpenSearch, Flask and an ecommerce dataset.
+
+In most applications, the search box is the one and only place in the entire application where users get to express what they want in their own words. Reflect on that for a moment. 🤔 Sure, users can click and browse their way around a site to express their desire to find something, but they are always doing it on someone else’s terms (usually the product owner’s) using their way of thinking, their links and, most importantly, their language. The search box is a free form, unfettered place for users to write (or say) whatever they want in the hope that your application will return something useful. That should strike you as both an amazing opportunity to interact with your users and a scary place where your application can fail miserably. After all, real world query logs contain everything from the mundane to the profound, not to mention a whole lot of junk, just have a look at Google’s auto-suggest feature and you’ll get a small taste of what we mean:
+
+
+
+When it works, users find more, buy more, engage more, and are generally happier with your application than when search doesn’t work. Of course, search is more than just a text box on a page, especially these days, when search engines handle a large variety of workloads ranging from simply indexing text, to serving as a NoSQL store, to acting as a smart cache in a high traffic site.
+
+Our goal in this class is to make that box a little less scary and a lot more amazing as well as show you how search can unlock multi-structured content in ways other data stores simply cannot.
+
+In this week, we are going to cover many of the foundations of search, including common use cases like ecommerce, key concepts around data ingestion, indexing, content analysis, querying, and faceting/aggregations. We will also cover the key APIs and commands to start and run OpenSearch and OpenSearch Dashboards. Last, but not least, you will see these things in action on both toy examples and a real, working search application powered by a dataset wit
